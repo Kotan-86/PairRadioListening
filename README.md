@@ -34,7 +34,10 @@
 * `domain/services`: 複数の値オブジェクトやエンティティに跨ぐドメインロジックを定義
 
 ### アプリケーション層
-* 未実装
+* `application/use_cases`: 1 操作単位のユースケースを定義
+* `application/dtos`: 各ユースケースの Request / Response を定義
+* `application/ports`: 永続化・外部サービスとの Outbound Port（Protocol）を定義
+* `application/errors`: ユースケースが返す標準エラーを定義
 
 ### インターフェイスアダプター層
 * 未実装
