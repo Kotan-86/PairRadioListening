@@ -1,0 +1,4 @@
+from infrastructure.repositories.in_memory_lecture_repository import InMemoryLectureRepository
+from infrastructure.repositories.in_memory_reaction_repository import InMemoryReactionRepository
+
+__all__ = ["InMemoryLectureRepository", "InMemoryReactionRepository"]

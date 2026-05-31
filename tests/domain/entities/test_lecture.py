@@ -7,45 +7,146 @@ from domain.value_objects.time_range import TimeRange
 from domain.value_objects.speech_text import SpeechText
 from domain.value_objects.recording_speaker import RecordingSpeaker
 
+
+def test_lecture_initial_state_matches_start_lecture():
+    # 仕様: docs/spec/application.md#start_lecture
+    lecture = Lecture(
+        id=uuid4(),
+        title="テスト講義",
+        persona_profiles=[],
+    )
+
+    assert lecture.status == "active"
+    assert lecture.started_at is None
+    assert lecture.ended_at == 0
+    assert lecture.utterances == []
+
+
 def test_lecture_add_utterance_updates_ended_at():
     """
     発話を講義に追加した際、講義の終了時間（ended_at）が
     追加された発話の終了時間に正しく更新されるかを検証する。
     """
-    
-    # ---------------------------------------------------------
-    # Arrange: テスト条件とテストデータを準備する
-    # ---------------------------------------------------------
     lecture_id = uuid4()
-    # 初期状態の講義（終了時間は 1000ms と仮定）
     lecture = Lecture(
         id=lecture_id,
         title="テスト講義",
         started_at=0,
         ended_at=1000,
         persona_profiles=[],
-        utterances=[]
+        utterances=[],
     )
-    
-    # 追加する新しい発話データ（終了時間が 2500ms の事実）
+
     new_utterance = Utterance(
         id=uuid4(),
         time_range=TimeRange(start_ms=1000, end_ms=2500),
         speech_text=SpeechText(text="ここから重要なポイントです。"),
-        speaker=RecordingSpeaker(display_name="講師A")
+        speaker=RecordingSpeaker(display_name="講師A"),
     )
 
-    # ---------------------------------------------------------
-    # Act: テスト対象の振る舞いを実行する
-    # ---------------------------------------------------------
     lecture.add_utterance(new_utterance)
 
-    # ---------------------------------------------------------
-    # Assert: 期待される結果を検証する
-    # ---------------------------------------------------------
-    # 1. 発話リストに追加されていること
     assert len(lecture.utterances) == 1
     assert lecture.utterances[0] == new_utterance
-    
-    # 2. 講義の終了時間(ended_at)が、新しい発話の終了時間に合わせて更新されていること
     assert lecture.ended_at == 2500
+
+
+def test_lecture_first_utterance_establishes_started_at():
+    # 仕様: docs/spec/domain.md#lecture（集約ルート）
+    lecture = Lecture(id=uuid4(), title="テスト講義", persona_profiles=[])
+
+    utterance = Utterance(
+        id=uuid4(),
+        time_range=TimeRange(start_ms=0, end_ms=500),
+        speech_text=SpeechText(text="はじめまして。"),
+        speaker=RecordingSpeaker(display_name="講師"),
+    )
+
+    lecture.add_utterance(utterance)
+
+    assert lecture.started_at == 0
+
+
+def test_lecture_add_utterance_raises_when_closed():
+    # 仕様: docs/spec/domain.md#lecture（集約ルート）
+    lecture = Lecture(id=uuid4(), title="テスト講義", persona_profiles=[])
+    lecture.close()
+
+    utterance = Utterance(
+        id=uuid4(),
+        time_range=TimeRange(start_ms=0, end_ms=500),
+        speech_text=SpeechText(text="追加不可"),
+        speaker=RecordingSpeaker(display_name="講師"),
+    )
+
+    with pytest.raises(ValueError, match="closed"):
+        lecture.add_utterance(utterance)
+
+
+def test_lecture_close_sets_status_and_ended_at():
+    # 仕様: docs/spec/application.md#end_lecture
+    lecture = Lecture(id=uuid4(), title="テスト講義", persona_profiles=[])
+    utterance = Utterance(
+        id=uuid4(),
+        time_range=TimeRange(start_ms=0, end_ms=3000),
+        speech_text=SpeechText(text="本日のテーマです。"),
+        speaker=RecordingSpeaker(display_name="講師"),
+    )
+    lecture.add_utterance(utterance)
+
+    lecture.close()
+
+    assert lecture.status == "closed"
+    assert lecture.ended_at == 3000
+
+
+def test_lecture_close_with_no_utterances():
+    lecture = Lecture(id=uuid4(), title="テスト講義", persona_profiles=[])
+
+    lecture.close()
+
+    assert lecture.status == "closed"
+    assert lecture.ended_at == 0
+
+
+def test_lecture_close_raises_when_already_closed():
+    lecture = Lecture(id=uuid4(), title="テスト講義", persona_profiles=[])
+    lecture.close()
+
+    with pytest.raises(ValueError, match="既に closed"):
+        lecture.close()
+
+
+def test_lecture_upsert_utterance_replaces_existing_id():
+    # 仕様: docs/spec/domain.md#utterance（エンティティ）
+    lecture = Lecture(id=uuid4(), title="テスト講義", persona_profiles=[])
+    utterance_id = uuid4()
+    original = Utterance(
+        id=utterance_id,
+        time_range=TimeRange(start_ms=0, end_ms=500),
+        speech_text=SpeechText(text="初稿"),
+        speaker=RecordingSpeaker(display_name="講師"),
+    )
+    lecture.add_utterance(original)
+
+    updated = Utterance(
+        id=utterance_id,
+        time_range=TimeRange(start_ms=0, end_ms=800),
+        speech_text=SpeechText(text="確定稿"),
+        speaker=RecordingSpeaker(display_name="講師"),
+    )
+    lecture.upsert_utterance(updated)
+
+    assert len(lecture.utterances) == 1
+    assert lecture.utterances[0].speech_text.text == "確定稿"
+    assert lecture.ended_at == 800
+
+
+def test_lecture_normalize_time_range_for_first_utterance():
+    # 仕様: docs/spec/application.md#record_utterance
+    normalized = Lecture.normalize_time_range_for_first_utterance(
+        TimeRange(start_ms=1000, end_ms=2500)
+    )
+
+    assert normalized.start_ms == 0
+    assert normalized.end_ms == 1500

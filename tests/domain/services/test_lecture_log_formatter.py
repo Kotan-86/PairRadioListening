@@ -28,7 +28,14 @@ class TestLectureLogFormatter:
         # Arrange: テスト条件とテストデータを準備する
         # ---------------------------------------------------------
         formatter = LectureLogFormatter()
-        lecture = Lecture(id=uuid4(), title="テスト講義", started_at=0, ended_at=3000, persona_profiles=[])
+        lecture = Lecture(
+            id=uuid4(),
+            title="テスト講義",
+            started_at=0,
+            ended_at=3000,
+            status="active",
+            persona_profiles=[],
+        )
         
         # 1000ms時点の講師の発話
         utterance = Utterance(
@@ -79,7 +86,14 @@ class TestLectureLogFormatter:
         """
         # Arrange
         formatter = LectureLogFormatter()
-        lecture = Lecture(id=uuid4(), title="テスト講義", started_at=0, ended_at=1000, persona_profiles=[])
+        lecture = Lecture(
+            id=uuid4(),
+            title="テスト講義",
+            started_at=0,
+            ended_at=1000,
+            status="active",
+            persona_profiles=[],
+        )
         
         # 意図的に lecture_time_anchor を None にした不正な Reaction を作成
         # (通常 dataclass の生成時には入るが、何らかのバグで None になった状態をシミュレート)

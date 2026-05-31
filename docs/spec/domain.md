@@ -72,9 +72,19 @@ PairRadioListening のドメイン境界・用語・不変条件を定義する�
 |-----|------|
 | `id` | システム内の永続 ID |
 | `title` | 表示用タイトル（任意） |
-| `started_at` | 講義タイムラインの原点（0 ms） |
-| `ended_at` | 最後に確定した発話の終了位置 |
+| `started_at` | 講義タイムラインの原点（0 ms）※ただし、lectureが成立した時点では未確立 |
+| `ended_at` | 最後に確定した発話の終了位置（講義タイムライン上の ms） |
+| `status` | 講義セッションのライフサイクル状態。`active`（進行中）または `closed`（終了） |
 | `persona_profiles` | 参加 AI ペルソナの設定一覧（`ai_persona_profile` の集合。開始時に確定） |
+
+**Why（`status`）:** `ended_at` はタイムライン上の終端位置であり、セッション終了（以降の書き込み拒否）と同一ではない。音声認識停止時に `end_lecture`（`application.md`）で `closed` へ遷移し、進行中のみ `utterance` / `reaction` の追加を許可するため。
+
+**不変条件（`lecture`）:**
+
+- 生成時（`start_lecture` 相当）の `status` は `active`
+- `status` が `closed` の `lecture` に `utterance` または `reaction` を追加してはならない
+- `status` が `closed` へ遷移するとき、`ended_at` は最後に確定した `utterance` の `time_range.end_ms` と一致する（`utterance` が 0 件なら 0）
+- MVP では `closed` から `active` への再開は許容しない
 
 #### utterance（エンティティ）
 
@@ -91,6 +101,7 @@ PairRadioListening のドメイン境界・用語・不変条件を定義する�
 
 - `utterance` は常に `lecture` 経由でだけ生成・保持し、`lecture_id` は持たない
 - 同一 `utterance.id` の更新は、同一 `utterance` として扱う（新規作成しない）
+- `lecture` の `started_at` が1本目の `utterance` が来たら確立する
 - `time_range` の開始時刻 ≤ 終了時刻
 
 ### 3.2 値オブジェクト
