@@ -42,7 +42,6 @@ GenerateAiReactionsForUtteranceError = (
     | UtteranceNotFound
     | AiPolicyGenerationFailed
     | AiTextGenerationFailed
-    | AiReactionBatchIncomplete
     | PersistenceFailed
 )
 
@@ -52,14 +51,14 @@ GenerateAiRepliesForUserReactionError = (
     | LectureClosed
     | ReactionNotFound
     | InvalidUserReaction
-    | AiAnalysisFailed
     | AiPolicyGenerationFailed
     | AiTextGenerationFailed
-    | AiReactionBatchIncomplete
     | PersistenceFailed
 )
 
-GetTimelineError = InvalidRequest | LectureNotFound | PersistenceFailed
+GetTranscriptError = InvalidRequest | LectureNotFound | PersistenceFailed
+
+GetDialogueError = InvalidRequest | LectureNotFound | PersistenceFailed
 
 EndLectureError = (
     InvalidRequest | LectureNotFound | LectureAlreadyClosed | PersistenceFailed

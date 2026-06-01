@@ -20,7 +20,7 @@ def _reaction(lecture_id: str, reaction_id: str) -> Reaction:
         ),
         reaction_text=ReactionText(text="テスト"),
         audio_data=AudioData.empty(),
-        created_at=0,
+        dialogue_sequence=0,
     )
 
 

@@ -1,3 +1,4 @@
+# MVP スコープ外: docs/spec/domain.md（user_reaction_analyzer は post-MVP）
 from domain.value_objects.reaction_text import ReactionText
 from domain.services.llm_analyzer_protocol import LlmAnalyzerProtocol
 from domain.value_objects.dialogue_policies import (

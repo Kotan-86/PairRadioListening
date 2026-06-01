@@ -18,6 +18,7 @@ from application.result import Err, Ok, Result
 from domain.entities.reaction import Reaction
 from domain.value_objects.audio_data import AudioData
 from domain.value_objects.dialogue_speaker import DialogueSpeaker
+from domain.value_objects.reply_target import ReplyTarget
 
 _USE_CASE = "post_user_reaction"
 
@@ -46,22 +47,36 @@ class PostUserReactionUseCase:
         if lecture.started_at is None or not lecture.utterances:
             return Err(TimelineNotEstablished(lecture_id=request.lecture_id))
 
-        target_check = self._verify_reply_target(request)
+        reply_target = request.reply_target
+        if reply_target is None:
+            latest = lecture.latest_utterance()
+            if latest is None:
+                return Err(TimelineNotEstablished(lecture_id=request.lecture_id))
+            reply_target = ReplyTarget(
+                reply_target_kind="utterance",
+                reply_target_id=str(latest.id),
+            )
+
+        target_check = self._verify_reply_target(
+            request.lecture_id,
+            reply_target,
+        )
         if target_check.is_err():
             return Err(target_check.error)
 
         try:
+            dialogue_sequence = lecture.allocate_dialogue_sequence()
             reaction = Reaction(
                 lecture_id=request.lecture_id,
                 speaker=DialogueSpeaker(
                     role="user",
                     display_name=request.speaker_display_name,
                 ),
-                reply_target=request.reply_target,
+                reply_target=reply_target,
                 lecture_time_anchor=request.lecture_time_anchor,
                 reaction_text=request.reaction_text,
                 audio_data=AudioData.empty(),
-                created_at=request.lecture_time_anchor.time_range.start_ms,
+                dialogue_sequence=dialogue_sequence,
             )
         except ValueError as exc:
             return Err(
@@ -75,6 +90,10 @@ class PostUserReactionUseCase:
         if save_result.is_err():
             return Err(to_persistence_failed(_USE_CASE, save_result.error))
 
+        lecture_save_result = self._lecture_repository.save(lecture)
+        if lecture_save_result.is_err():
+            return Err(to_persistence_failed(_USE_CASE, lecture_save_result.error))
+
         return Ok(
             PostUserReactionResponse(
                 reaction_id=str(reaction.id),
@@ -84,47 +103,48 @@ class PostUserReactionUseCase:
 
     def _verify_reply_target(
         self,
-        request: PostUserReactionRequest,
+        lecture_id: str,
+        reply_target: ReplyTarget,
     ) -> Result[None, ReplyTargetNotFound]:
-        if request.reply_target.reply_target_kind == "utterance":
-            load_result = self._lecture_repository.find_by_id(request.lecture_id)
+        if reply_target.reply_target_kind == "utterance":
+            load_result = self._lecture_repository.find_by_id(lecture_id)
             if load_result.is_err() or load_result.value is None:
                 return Err(
                     ReplyTargetNotFound(
-                        lecture_id=request.lecture_id,
+                        lecture_id=lecture_id,
                         reply_target_kind="utterance",
-                        reply_target_id=str(request.reply_target.reply_target_id),
+                        reply_target_id=str(reply_target.reply_target_id),
                     )
                 )
             lecture = load_result.value
-            if lecture.find_utterance_by_id(request.reply_target.reply_target_id) is None:
+            if lecture.find_utterance_by_id(reply_target.reply_target_id) is None:
                 return Err(
                     ReplyTargetNotFound(
-                        lecture_id=request.lecture_id,
+                        lecture_id=lecture_id,
                         reply_target_kind="utterance",
-                        reply_target_id=str(request.reply_target.reply_target_id),
+                        reply_target_id=str(reply_target.reply_target_id),
                     )
                 )
             return Ok(None)
 
         find_result = self._reaction_repository.find_by_id(
-            request.lecture_id,
-            request.reply_target.reply_target_id,
+            lecture_id,
+            reply_target.reply_target_id,
         )
         if find_result.is_err():
             return Err(
                 ReplyTargetNotFound(
-                    lecture_id=request.lecture_id,
+                    lecture_id=lecture_id,
                     reply_target_kind="reaction",
-                    reply_target_id=str(request.reply_target.reply_target_id),
+                    reply_target_id=str(reply_target.reply_target_id),
                 )
             )
         if find_result.value is None:
             return Err(
                 ReplyTargetNotFound(
-                    lecture_id=request.lecture_id,
+                    lecture_id=lecture_id,
                     reply_target_kind="reaction",
-                    reply_target_id=str(request.reply_target.reply_target_id),
+                    reply_target_id=str(reply_target.reply_target_id),
                 )
             )
         return Ok(None)

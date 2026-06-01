@@ -64,6 +64,20 @@ def test_start_lecture_succeeds_and_persists_lecture():
     assert result.value.lecture_id == str(lecture.id)
 
 
+def test_start_lecture_fails_when_persona_profiles_more_than_one():
+    repository = StubLectureRepository()
+    use_case = StartLectureUseCase(_lecture_repository=repository)
+    request = StartLectureRequest.from_fields(
+        persona_profiles=[_persona(), _persona()],
+    )
+
+    result = use_case.execute(request)
+
+    assert result.is_err()
+    assert isinstance(result.error, InvalidPersonaProfiles)
+    assert repository.saved == []
+
+
 def test_start_lecture_fails_when_persona_profiles_empty():
     repository = StubLectureRepository()
     use_case = StartLectureUseCase(_lecture_repository=repository)

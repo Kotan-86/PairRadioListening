@@ -14,9 +14,9 @@ _USE_CASE = "post_user_reaction"
 class PostUserReactionRequest:
     lecture_id: str
     reaction_text: ReactionText
-    reply_target: ReplyTarget
     lecture_time_anchor: LectureTimeAnchor
     speaker_display_name: str
+    reply_target: ReplyTarget | None = None
 
     def validate(self) -> Result[None, InvalidRequest]:
         if not self.lecture_id.strip():

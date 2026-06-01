@@ -6,4 +6,4 @@ from dataclasses import dataclass
 class GenerateAiRepliesForUserReactionResponse:
     lecture_id: str
     user_reaction_id: str
-    reaction_ids: tuple[str, ...]
+    reaction_id: str

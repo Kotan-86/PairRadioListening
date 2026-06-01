@@ -14,7 +14,19 @@ PairRadioListening のドメイン境界・用語・不変条件を定義する�
 |------|------|
 | 事実 | 講師が話した内容とその時間区間 |
 | 解釈 | ユーザー・AI が事実や他の発言に対して行うリアクション |
-| 時間錨 | 解釈が「講義のいつごろ」に属するかを保証する参照 |
+| 時間錨 | 解釈が「講義のいつごろ」に属するかを保証する参照（`lecture_time_anchor`） |
+| 対話時系列 | 対話ストリーム上の並び順を保証する単調 ID（`dialogue_sequence`） |
+
+**Why（事実と解釈の表示分離）:** 文字起こしは講義時間軸の `utterance` ストリーム、ユーザーと AI のやり取りは `reaction` の対話ストリームとして **別画面** に表示する。両者は `reply_target` と `lecture_time_anchor` で横断参照する。
+
+### 1.1 読み取りビュー（MVP）
+
+| ビュー | 含むもの | 並び順 |
+|--------|---------|--------|
+| 文字起こしストリーム | `utterance` のみ | `time_range.start_ms` 昇順 |
+| 対話ストリーム | `reaction`（`speaker.role` が `user` または `ai`）のみ | `dialogue_sequence` 昇順 |
+
+**Why（`dialogue_sequence`）:** 連投を含む対話の表示順を講義時間軸と切り離し、投稿・生成の完了順を保証するため。並びに `lecture_time_anchor` は使わない。
 
 ---
 
@@ -75,7 +87,8 @@ PairRadioListening のドメイン境界・用語・不変条件を定義する�
 | `started_at` | 講義タイムラインの原点（0 ms）※ただし、lectureが成立した時点では未確立 |
 | `ended_at` | 最後に確定した発話の終了位置（講義タイムライン上の ms） |
 | `status` | 講義セッションのライフサイクル状態。`active`（進行中）または `closed`（終了） |
-| `persona_profiles` | 参加 AI ペルソナの設定一覧（`ai_persona_profile` の集合。開始時に確定） |
+| `persona_profiles` | 参加 AI ペルソナの設定（MVP では `ai_persona_profile` **1 件のみ**。開始時に確定） |
+| `next_dialogue_sequence` | 次に採番する `dialogue_sequence` の値（整数。初期値 0） |
 
 **Why（`status`）:** `ended_at` はタイムライン上の終端位置であり、セッション終了（以降の書き込み拒否）と同一ではない。音声認識停止時に `end_lecture`（`application.md`）で `closed` へ遷移し、進行中のみ `utterance` / `reaction` の追加を許可するため。
 
@@ -85,6 +98,9 @@ PairRadioListening のドメイン境界・用語・不変条件を定義する�
 - `status` が `closed` の `lecture` に `utterance` または `reaction` を追加してはならない
 - `status` が `closed` へ遷移するとき、`ended_at` は最後に確定した `utterance` の `time_range.end_ms` と一致する（`utterance` が 0 件なら 0）
 - MVP では `closed` から `active` への再開は許容しない
+- `persona_profiles` は **ちょうど 1 件** である（MVP）
+- `reaction` を 1 件追加するたびに `next_dialogue_sequence` を 1 増やし、その増加前の値を当該 `reaction.dialogue_sequence` に付与する
+- 同一 `lecture` 内の `dialogue_sequence` は重複しない
 
 #### utterance（エンティティ）
 
@@ -140,12 +156,13 @@ PairRadioListening のドメイン境界・用語・不変条件を定義する�
 | `lecture_time_anchor` | 講義時間軸上の位置（`lecture_time_anchor` 値オブジェクト） |
 | `reaction_text` | テキスト内容（`reaction_text` 値オブジェクト） |
 | `audio_data` | 音声データ（`audio_data` 値オブジェクト。初期実装では空を許容） |
-| `created_at` | 投稿・生成時間（講義タイムライン上） |
+| `dialogue_sequence` | 対話ストリーム上の順序（`lecture` が採番する単調増加の整数） |
 
 **不変条件:**
 
 - `reaction` は必ず 1 つの `lecture` に属する
-- `lecture_time_anchor` は必須（直接の返信先がスレッドでも、講義のどの時間帯かを失わない）
+- `lecture_time_anchor` と `dialogue_sequence` はいずれも必須
+- `lecture_time_anchor` は、直接の返信先が別の `reaction` でも、講義のどの時間帯かを失わない
 - `reply_target` が `utterance` の場合、参照先 `utterance.id` は同一 `lecture.id` 内に存在する
 - `reply_target` が `reaction` の場合、参照先 `reaction.id` は同一 `lecture.id` 内に存在する
 - ユーザー投稿の `speaker.role` は `user`、AI 生成の `speaker.role` は `ai`
@@ -160,6 +177,17 @@ PairRadioListening のドメイン境界・用語・不変条件を定義する�
 |------|-------------|
 | `utterance` | `utterance.id` |
 | `reaction` | `reaction.id` |
+
+**MVP における `reply_target` の付け方:**
+
+| 投稿者 | 状況 | `reply_target` |
+|--------|------|----------------|
+| ユーザー | 講師発話・いまの区間への反応（デフォルト） | 当該講義の **直近** `utterance` |
+| ユーザー | 特定の AI 発言への返信（UI で選択） | 当該 `reaction`（`speaker.role` が `ai`） |
+| AI | 新規 `utterance` への反応 | 当該 `utterance` |
+| AI | ユーザー `reaction` への返信 | 当該ユーザー `reaction` |
+
+**Why（デフォルト直近 `utterance`）:** 投稿時に返信先を選ばない操作を許しつつ、`reply_target` 必須の不変条件を満たすため（未指定時は Application 層または Interface 層が直近 `utterance` を解決する。詳細は `application.md` §3 `post_user_reaction`）。
 
 #### lecture_time_anchor
 
@@ -181,37 +209,43 @@ PairRadioListening のドメイン境界・用語・不変条件を定義する�
 | `display_name` | 表示名 |
 | `persona_id` | AI の場合のみ。`ai_persona_profile.id` の値 |
 
-### 4.3 ドメインサービス
+### 4.3 対話 UI モデル（MVP）
 
-ドメインサービスは **方針・判定結果** を返す。
+- 対話ストリームは **単一のフラットなリスト** とする。子スレッド用の集約やスレッド ID は持たない。
+- 各 `reaction` は `reply_target` により **直接の返信先 1 件** を参照する。UI は返信参照（プレビュー）を表示してよい。
+- **表示規則（Interface 層。`interface.md` 参照）:**
+  - `reply_target` が `utterance` のとき: 当該 `utterance.time_range` に基づく **講義時刻** をメッセージ左上等に表示し、文字起こしパネルとの横断参照とする。
+  - `reply_target` が `reaction` のとき: 返信参照は **話者表示名 + テキスト抜粋** のみとする（講義時刻ラベルは出さない）。
+
+**Why:** Discord 的なフラットチャットと、文字起こしパネルとの役割分離を両立するため。
+
+### 4.4 ドメインサービス
+
+ドメインサービスは **方針・判定結果** を返す。本文テキストの生成は含めない。
 
 #### user_reaction_analyzer
 
-ユーザーが投稿した `reaction_text` を解析し、意図（技術的質問・共感・悩みの吐露等）と感情トーンを分類する。
-
-**入力:** `reaction_text`  
-**出力:** 意図ラベル、感情トーン（ドメイン定義の列挙）
+**MVP スコープ外。** ユーザー投稿の意図分類・感情トーン解析は行わない。
 
 #### timeline_atmosphere_assessor
 
-直近の講師発話ペースと、タイムライン上の `reaction` 投稿頻度から、現在の盛り上がり度合いを算出する。
-
-**入力:** 直近 `utterance` 一覧、`reaction` 一覧（時間窓付き）  
-**出力:** 盛り上がり度（ドメイン定義の段階またはスコア）
+**MVP スコープ外。** 盛り上がり度の算出は行わない。
 
 #### lecturer_reaction_generator
 
-新規 `utterance`（事実）を受け取り、各 AI ペルソナがリアクションを生成するための **方針** を決定する。方針には「事実の要約切り口」と「自分ごと化の例示角度」を含む。
+新規 `utterance`（事実）を受け取り、AI ペルソナ（MVP では 1 件）がリアクションするための **方針** を決定する。
 
-**入力:** `utterance`、`ai_persona_profile`、任意で `timeline_atmosphere_assessor` の結果  
-**出力:** ペルソナごとのリアクション生成方針（テキスト生成そのものは含まない）
+**入力:** `utterance`、`ai_persona_profile`（講義に紐づく 1 件）  
+**出力:** リアクション生成方針（テキスト生成そのものは含まない）
 
 #### user_reaction_responder
 
-`user_reaction_analyzer` の結果を受け取り、各 AI ペルソナがスレッド返信する **方針**（トーン・返信意図・参照すべき事実）を決定する。
+対象ユーザー `reaction` と、その `reply_target` の種別（`utterance` / `reaction`）に基づき、AI ペルソナ（MVP では 1 件）の **返信方針** を決定する。ユーザー投稿の解析は行わない。
 
-**入力:** 対象 `reaction`、`ai_persona_profile`、解析結果、任意で盛り上がり度  
-**出力:** ペルソナごとの返信方針（テキスト生成そのものは含まない）
+**入力:** 対象 `reaction`（ユーザー投稿）、`ai_persona_profile`  
+**出力:** 返信方針（テキスト生成そのものは含まない）
+
+**Why（解析の省略）:** MVP では質問／感想の分類や `user_reaction_analyzer` を用いず、`reply_target` の種別に応じた方針決定のみで足りるため。
 
 ---
 
@@ -228,7 +262,9 @@ AI ペルソナのカスタマイズ設定。講義開始時に確定し、セ�
 | `persona_prompt` | ユーザーが自由記述するペルソナ原稿（テキスト） |
 | `voice_id` | 将来の音声合成用。MVP では未設定可 |
 
-**Why:** 複数 AI ペルソナの参加設定を、対話ロジックから参照可能な不変データとして保持するため。
+**Why:** AI ペルソナ設定を、対話ロジックから参照可能な不変データとして保持するため。
+
+**MVP:** 講義あたり `ai_persona_profile` は **1 件のみ** とする。複数ペルソナは将来拡張とする。
 
 ---
 
@@ -243,7 +279,7 @@ AI ペルソナのカスタマイズ設定。講義開始時に確定し、セ�
 
 **不変条件:**
 
-- 出力に含まれるすべての `reaction` は、対応する `lecture_time_anchor` と `reply_target` を欠落なく含む
+- 出力に含まれるすべての `reaction` は、対応する `lecture_time_anchor`、`dialogue_sequence`、`reply_target` を欠落なく含む
 - 本サービスはドメイン状態を変更しない（読み取り専用）
 
 **MVP スコープ:** 初期リリースでは実装対象外とする。README §2 のコア機能（視聴中の壁打ち）を優先する。
@@ -264,6 +300,6 @@ AI ペルソナのカスタマイズ設定。講義開始時に確定し、セ�
 
 | README §2 | ドメイン |
 |-----------|----------|
-| 3.1 発話内容の文字起こし | 講義記録: `utterance`, `speech_text`, `time_range` |
-| 3.2 タイムラインへの投稿 | タイムライン対話: `reaction`（ユーザー、`reply_target`, `lecture_time_anchor`） |
-| 3.3 AI との壁打ち | タイムライン対話: `reaction`（AI）、§4.3 のドメインサービス群 |
+| 3.1 発話内容の文字起こし | 講義記録: `utterance`, `speech_text`, `time_range`（文字起こしストリームは講義時間軸順） |
+| 3.2 タイムラインへの投稿 | タイムライン対話: `reaction`（ユーザー、`reply_target`, `lecture_time_anchor`, `dialogue_sequence`） |
+| 3.3 AI との壁打ち | タイムライン対話: `reaction`（AI）、対話ストリーム、`§4.4` のドメインサービス（MVP 範囲） |

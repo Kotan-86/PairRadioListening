@@ -13,10 +13,10 @@ class StartLectureRequest:
     title: str = ""
 
     def validate(self) -> Result[None, InvalidPersonaProfiles]:
-        if not self.persona_profiles:
+        if len(self.persona_profiles) != 1:
             return Err(
                 InvalidPersonaProfiles(
-                    reason="persona_profiles must contain at least one item",
+                    reason="persona_profiles must contain exactly one item",
                 )
             )
         return Ok(None)

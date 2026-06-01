@@ -17,11 +17,16 @@ class Lecture(Entity):
     ended_at: int = 0
     status: LectureStatus = "active"
     persona_profiles: list[AiPersonaProfile]
+    next_dialogue_sequence: int = 0
     utterances: list[Utterance] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.status not in ("active", "closed"):
             raise ValueError("lecture.status は active または closed のみです")
+        if len(self.persona_profiles) != 1:
+            raise ValueError(
+                "lecture.persona_profiles は MVP ではちょうど 1 件である必要があります"
+            )
 
     def add_utterance(self, utterance: Utterance) -> None:
         if self.status == "closed":
@@ -42,6 +47,18 @@ class Lecture(Entity):
                 self._refresh_ended_at()
                 return
         self.add_utterance(utterance)
+
+    def allocate_dialogue_sequence(self) -> int:
+        if self.status == "closed":
+            raise ValueError("closed の lecture では dialogue_sequence を採番できません")
+        current = self.next_dialogue_sequence
+        self.next_dialogue_sequence += 1
+        return current
+
+    def latest_utterance(self) -> Utterance | None:
+        if not self.utterances:
+            return None
+        return max(self.utterances, key=lambda u: u.time_range.start_ms)
 
     def find_utterance_by_id(self, utterance_id: EntityId) -> Utterance | None:
         for utterance in self.utterances:

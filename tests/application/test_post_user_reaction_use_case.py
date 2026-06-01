@@ -120,6 +120,32 @@ def test_post_user_reaction_succeeds():
     assert result.is_ok()
     assert len(reaction_repo.saved) == 1
     assert reaction_repo.saved[0].speaker.role == "user"
+    assert reaction_repo.saved[0].dialogue_sequence == 0
+    assert lecture_repo.by_id["lecture-1"].next_dialogue_sequence == 1
+
+
+def test_post_user_reaction_uses_latest_utterance_when_reply_target_omitted():
+    lecture_repo = StubLectureRepository(by_id={"lecture-1": _lecture_with_utterance()})
+    reaction_repo = StubReactionRepository()
+    use_case = PostUserReactionUseCase(
+        _lecture_repository=lecture_repo,
+        _reaction_repository=reaction_repo,
+    )
+
+    result = use_case.execute(
+        PostUserReactionRequest(
+            lecture_id="lecture-1",
+            reaction_text=ReactionText(text="なるほど"),
+            reply_target=None,
+            lecture_time_anchor=LectureTimeAnchor.from_time_range(
+                TimeRange(start_ms=500, end_ms=1000)
+            ),
+            speaker_display_name="ユーザーA",
+        )
+    )
+
+    assert result.is_ok()
+    assert reaction_repo.saved[0].reply_target.reply_target_id == "utterance-1"
 
 
 def test_post_user_reaction_fails_when_invalid_request():

@@ -8,8 +8,6 @@ from application.dtos.generate_ai_replies_for_user_reaction_response import (
     GenerateAiRepliesForUserReactionResponse,
 )
 from application.errors import (
-    AiAnalysisFailed,
-    AiReactionBatchIncomplete,
     InvalidUserReaction,
     LectureClosed,
     LectureNotFound,
@@ -26,7 +24,6 @@ from application.ports.reaction_repository import ReactionRepository
 from application.ports.reaction_text_generator import ReactionTextGeneratorPort
 from application.result import Err, Ok, Result
 from domain.entities.reaction import Reaction
-from domain.services.user_reaction_analyzer import UserReactionAnalyzer
 from domain.services.user_reaction_responder import UserReactionResponder
 from domain.value_objects.audio_data import AudioData
 from domain.value_objects.dialogue_speaker import DialogueSpeaker
@@ -41,7 +38,6 @@ class GenerateAiRepliesForUserReactionUseCase:
     _lecture_repository: LectureRepository
     _reaction_repository: ReactionRepository
     _reaction_text_generator: ReactionTextGeneratorPort
-    _user_reaction_analyzer: UserReactionAnalyzer
     _user_reaction_responder: UserReactionResponder
 
     def execute(
@@ -83,21 +79,12 @@ class GenerateAiRepliesForUserReactionUseCase:
                 )
             )
 
-        try:
-            analysis = self._user_reaction_analyzer.analyze(user_reaction.reaction_text)
-        except (ValueError, RuntimeError):
-            return Err(
-                AiAnalysisFailed(
-                    lecture_id=request.lecture_id,
-                    reaction_id=request.reaction_id,
-                )
-            )
+        persona = lecture.persona_profiles[0]
 
         try:
-            policies = self._user_reaction_responder.determine_policies(
+            policy = self._user_reaction_responder.determine_policy(
                 reaction=user_reaction,
-                analysis_result=analysis,
-                personas=lecture.persona_profiles,
+                persona=persona,
             )
         except (ValueError, RuntimeError):
             return Err(
@@ -108,80 +95,61 @@ class GenerateAiRepliesForUserReactionUseCase:
                 )
             )
 
-        expected_count = len(lecture.persona_profiles)
-        if len(policies) != expected_count:
+        text_result = self._reaction_text_generator.generate_for_user_reaction_reply(
+            policy=policy,
+            reaction=user_reaction,
+            persona=persona,
+        )
+        if text_result.is_err():
             return Err(
-                AiReactionBatchIncomplete(
+                to_ai_text_generation_failed(
                     lecture_id=request.lecture_id,
-                    expected_count=expected_count,
-                    succeeded_count=len(policies),
+                    trigger="user_reaction",
+                    source_id=request.reaction_id,
+                    port_error=text_result.error,
                 )
             )
 
-        reactions_to_save: list[Reaction] = []
-        for persona, policy in zip(lecture.persona_profiles, policies, strict=True):
-            text_result = self._reaction_text_generator.generate_for_user_reaction_reply(
-                policy=policy,
-                reaction=user_reaction,
-                persona=persona,
+        try:
+            dialogue_sequence = lecture.allocate_dialogue_sequence()
+            reaction = Reaction(
+                lecture_id=request.lecture_id,
+                speaker=DialogueSpeaker(
+                    role="ai",
+                    display_name=persona.display_name,
+                    persona_id=persona.id,
+                ),
+                reply_target=ReplyTarget(
+                    reply_target_kind="reaction",
+                    reply_target_id=str(user_reaction.id),
+                ),
+                lecture_time_anchor=user_reaction.lecture_time_anchor,
+                reaction_text=ReactionText(text=text_result.value),
+                audio_data=AudioData.empty(),
+                dialogue_sequence=dialogue_sequence,
             )
-            if text_result.is_err():
-                return Err(
-                    to_ai_text_generation_failed(
-                        lecture_id=request.lecture_id,
-                        trigger="user_reaction",
-                        source_id=request.reaction_id,
-                        port_error=text_result.error,
-                    )
-                )
-
-            try:
-                reaction = Reaction(
+        except ValueError:
+            return Err(
+                to_ai_policy_generation_failed(
                     lecture_id=request.lecture_id,
-                    speaker=DialogueSpeaker(
-                        role="ai",
-                        display_name=persona.display_name,
-                        persona_id=persona.id,
-                    ),
-                    reply_target=ReplyTarget(
-                        reply_target_kind="reaction",
-                        reply_target_id=str(user_reaction.id),
-                    ),
-                    lecture_time_anchor=user_reaction.lecture_time_anchor,
-                    reaction_text=ReactionText(text=text_result.value),
-                    audio_data=AudioData.empty(),
-                    created_at=user_reaction.created_at,
+                    trigger="user_reaction",
+                    source_id=request.reaction_id,
+                    persona_id=str(persona.id),
                 )
-            except ValueError:
-                return Err(
-                    to_ai_policy_generation_failed(
-                        lecture_id=request.lecture_id,
-                        trigger="user_reaction",
-                        source_id=request.reaction_id,
-                        persona_id=str(persona.id),
-                    )
-                )
-            reactions_to_save.append(reaction)
+            )
 
-        saved_ids: list[str] = []
-        for reaction in reactions_to_save:
-            save_result = self._reaction_repository.save(reaction)
-            if save_result.is_err():
-                if saved_ids:
-                    return Err(
-                        AiReactionBatchIncomplete(
-                            lecture_id=request.lecture_id,
-                            expected_count=expected_count,
-                            succeeded_count=len(saved_ids),
-                        )
-                    )
-                return Err(to_persistence_failed(_USE_CASE, save_result.error))
-            saved_ids.append(str(reaction.id))
+        save_result = self._reaction_repository.save(reaction)
+        if save_result.is_err():
+            return Err(to_persistence_failed(_USE_CASE, save_result.error))
+
+        lecture_save_result = self._lecture_repository.save(lecture)
+        if lecture_save_result.is_err():
+            return Err(to_persistence_failed(_USE_CASE, lecture_save_result.error))
 
         return Ok(
             GenerateAiRepliesForUserReactionResponse(
                 lecture_id=request.lecture_id,
                 user_reaction_id=request.reaction_id,
-                reaction_ids=tuple(saved_ids),
+                reaction_id=str(reaction.id),
             )
         )
