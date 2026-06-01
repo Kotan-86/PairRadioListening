@@ -8,7 +8,6 @@ from application.dtos.generate_ai_reactions_for_utterance_response import (
     GenerateAiReactionsForUtteranceResponse,
 )
 from application.errors import (
-    AiReactionBatchIncomplete,
     LectureClosed,
     LectureNotFound,
     UtteranceNotFound,
@@ -67,10 +66,12 @@ class GenerateAiReactionsForUtteranceUseCase:
                 )
             )
 
+        persona = lecture.persona_profiles[0]
+
         try:
-            policies = self._lecturer_reaction_generator.generate_policies(
+            policy = self._lecturer_reaction_generator.generate_policy(
                 utterance=utterance,
-                personas=lecture.persona_profiles,
+                persona=persona,
             )
         except (ValueError, RuntimeError):
             return Err(
@@ -81,83 +82,64 @@ class GenerateAiReactionsForUtteranceUseCase:
                 )
             )
 
-        expected_count = len(lecture.persona_profiles)
-        if len(policies) != expected_count:
+        text_result = self._reaction_text_generator.generate_for_lecturer_reaction(
+            policy=policy,
+            utterance=utterance,
+            persona=persona,
+        )
+        if text_result.is_err():
             return Err(
-                AiReactionBatchIncomplete(
+                to_ai_text_generation_failed(
                     lecture_id=request.lecture_id,
-                    expected_count=expected_count,
-                    succeeded_count=len(policies),
+                    trigger="utterance",
+                    source_id=request.utterance_id,
+                    port_error=text_result.error,
                 )
             )
 
-        reactions_to_save: list[Reaction] = []
-        for persona, policy in zip(lecture.persona_profiles, policies, strict=True):
-            text_result = self._reaction_text_generator.generate_for_lecturer_reaction(
-                policy=policy,
-                utterance=utterance,
-                persona=persona,
+        try:
+            dialogue_sequence = lecture.allocate_dialogue_sequence()
+            reaction = Reaction(
+                lecture_id=request.lecture_id,
+                speaker=DialogueSpeaker(
+                    role="ai",
+                    display_name=persona.display_name,
+                    persona_id=persona.id,
+                ),
+                reply_target=ReplyTarget(
+                    reply_target_kind="utterance",
+                    reply_target_id=str(utterance.id),
+                ),
+                lecture_time_anchor=LectureTimeAnchor.from_utterance(
+                    utterance_id=str(utterance.id),
+                    time_range=utterance.time_range,
+                ),
+                reaction_text=ReactionText(text=text_result.value),
+                audio_data=AudioData.empty(),
+                dialogue_sequence=dialogue_sequence,
             )
-            if text_result.is_err():
-                return Err(
-                    to_ai_text_generation_failed(
-                        lecture_id=request.lecture_id,
-                        trigger="utterance",
-                        source_id=request.utterance_id,
-                        port_error=text_result.error,
-                    )
-                )
-
-            try:
-                reaction = Reaction(
+        except ValueError:
+            return Err(
+                to_ai_policy_generation_failed(
                     lecture_id=request.lecture_id,
-                    speaker=DialogueSpeaker(
-                        role="ai",
-                        display_name=persona.display_name,
-                        persona_id=persona.id,
-                    ),
-                    reply_target=ReplyTarget(
-                        reply_target_kind="utterance",
-                        reply_target_id=str(utterance.id),
-                    ),
-                    lecture_time_anchor=LectureTimeAnchor.from_utterance(
-                        utterance_id=str(utterance.id),
-                        time_range=utterance.time_range,
-                    ),
-                    reaction_text=ReactionText(text=text_result.value),
-                    audio_data=AudioData.empty(),
-                    created_at=utterance.time_range.end_ms,
+                    trigger="utterance",
+                    source_id=request.utterance_id,
+                    persona_id=str(persona.id),
                 )
-            except ValueError:
-                return Err(
-                    to_ai_policy_generation_failed(
-                        lecture_id=request.lecture_id,
-                        trigger="utterance",
-                        source_id=request.utterance_id,
-                        persona_id=str(persona.id),
-                    )
-                )
-            reactions_to_save.append(reaction)
+            )
 
-        saved_ids: list[str] = []
-        for reaction in reactions_to_save:
-            save_result = self._reaction_repository.save(reaction)
-            if save_result.is_err():
-                if saved_ids:
-                    return Err(
-                        AiReactionBatchIncomplete(
-                            lecture_id=request.lecture_id,
-                            expected_count=expected_count,
-                            succeeded_count=len(saved_ids),
-                        )
-                    )
-                return Err(to_persistence_failed(_USE_CASE, save_result.error))
-            saved_ids.append(str(reaction.id))
+        save_result = self._reaction_repository.save(reaction)
+        if save_result.is_err():
+            return Err(to_persistence_failed(_USE_CASE, save_result.error))
+
+        lecture_save_result = self._lecture_repository.save(lecture)
+        if lecture_save_result.is_err():
+            return Err(to_persistence_failed(_USE_CASE, lecture_save_result.error))
 
         return Ok(
             GenerateAiReactionsForUtteranceResponse(
                 lecture_id=request.lecture_id,
                 utterance_id=request.utterance_id,
-                reaction_ids=tuple(saved_ids),
+                reaction_id=str(reaction.id),
             )
         )

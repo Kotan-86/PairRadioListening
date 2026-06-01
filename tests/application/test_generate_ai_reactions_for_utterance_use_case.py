@@ -5,7 +5,6 @@ from application.dtos.generate_ai_reactions_for_utterance_request import (
     GenerateAiReactionsForUtteranceRequest,
 )
 from application.errors import (
-    AiReactionBatchIncomplete,
     AiTextGenerationFailed,
     InvalidRequest,
     LectureClosed,
@@ -33,6 +32,7 @@ class StubLectureRepository:
     by_id: dict[str, Lecture] = field(default_factory=dict)
 
     def save(self, lecture: Lecture) -> Result[None, PersistencePortError]:
+        self.by_id[str(lecture.id)] = lecture
         return Ok(None)
 
     def find_by_id(self, lecture_id: str) -> Result[Lecture | None, PersistencePortError]:
@@ -42,10 +42,10 @@ class StubLectureRepository:
 @dataclass
 class StubReactionRepository:
     saved: list[Reaction] = field(default_factory=list)
-    fail_after: int | None = None
+    fail_on_save: bool = False
 
     def save(self, reaction: Reaction) -> Result[None, PersistencePortError]:
-        if self.fail_after is not None and len(self.saved) >= self.fail_after:
+        if self.fail_on_save:
             return Err(
                 PersistencePortError(operation="save", resource="reaction", reason="save failed")
             )
@@ -65,10 +65,10 @@ class StubReactionRepository:
 
 @dataclass
 class StubReactionTextGenerator:
-    fail_persona_id: str | None = None
+    fail: bool = False
 
     def generate_for_lecturer_reaction(self, policy, utterance, persona) -> Result[str, ReactionTextPortError]:
-        if self.fail_persona_id and str(persona.id) == self.fail_persona_id:
+        if self.fail:
             return Err(ReactionTextPortError(persona_id=str(persona.id), reason="failed"))
         return Ok(f"AI reaction for {persona.display_name}")
 
@@ -87,7 +87,7 @@ class StubLlmAnalyzer:
         self,
         reaction_text: str,
         persona_prompt: str,
-        analysis: dict,
+        reply_target_kind: str,
     ) -> dict:
         return {"tone": "neutral", "response_intent": "共感", "reference_facts": []}
 
@@ -98,7 +98,6 @@ def _lecture_with_utterance() -> Lecture:
         title="講義",
         persona_profiles=[
             AiPersonaProfile(id="p1", display_name="AI1", persona_prompt="prompt1"),
-            AiPersonaProfile(id="p2", display_name="AI2", persona_prompt="prompt2"),
         ],
         started_at=0,
     )
@@ -127,10 +126,9 @@ def _use_case(
 
 
 def test_generate_ai_reactions_succeeds():
-    use_case = _use_case(
-        lecture_repo=StubLectureRepository(by_id={"lecture-1": _lecture_with_utterance()}),
-        reaction_repo=StubReactionRepository(),
-    )
+    lecture_repo = StubLectureRepository(by_id={"lecture-1": _lecture_with_utterance()})
+    reaction_repo = StubReactionRepository()
+    use_case = _use_case(lecture_repo=lecture_repo, reaction_repo=reaction_repo)
 
     result = use_case.execute(
         GenerateAiReactionsForUtteranceRequest(
@@ -140,7 +138,10 @@ def test_generate_ai_reactions_succeeds():
     )
 
     assert result.is_ok()
-    assert len(result.value.reaction_ids) == 2
+    assert result.value.reaction_id
+    assert len(reaction_repo.saved) == 1
+    assert reaction_repo.saved[0].dialogue_sequence == 0
+    assert lecture_repo.by_id["lecture-1"].next_dialogue_sequence == 1
 
 
 def test_generate_ai_reactions_fails_when_utterance_not_found():
@@ -180,7 +181,7 @@ def test_generate_ai_reactions_fails_when_lecture_closed():
 def test_generate_ai_reactions_fails_when_text_generation_fails():
     use_case = _use_case(
         lecture_repo=StubLectureRepository(by_id={"lecture-1": _lecture_with_utterance()}),
-        text_generator=StubReactionTextGenerator(fail_persona_id="p2"),
+        text_generator=StubReactionTextGenerator(fail=True),
     )
 
     result = use_case.execute(
@@ -194,10 +195,10 @@ def test_generate_ai_reactions_fails_when_text_generation_fails():
     assert isinstance(result.error, AiTextGenerationFailed)
 
 
-def test_generate_ai_reactions_fails_when_batch_incomplete_on_save():
+def test_generate_ai_reactions_fails_when_persistence_fails():
     use_case = _use_case(
         lecture_repo=StubLectureRepository(by_id={"lecture-1": _lecture_with_utterance()}),
-        reaction_repo=StubReactionRepository(fail_after=1),
+        reaction_repo=StubReactionRepository(fail_on_save=True),
     )
 
     result = use_case.execute(
@@ -208,7 +209,7 @@ def test_generate_ai_reactions_fails_when_batch_incomplete_on_save():
     )
 
     assert result.is_err()
-    assert isinstance(result.error, AiReactionBatchIncomplete)
+    assert isinstance(result.error, PersistenceFailed)
 
 
 def test_generate_ai_reactions_fails_when_invalid_request():

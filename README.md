@@ -32,15 +32,25 @@
 * `domain/entities`: システムの中心にある最も安定したルールを定義
 * `domain/value_object`: 属性によって定義される不変なオブジェクトを定義
 * `domain/services`: 複数の値オブジェクトやエンティティに跨ぐドメインロジックを定義
+* 仕様: [docs/spec/domain.md](docs/spec/domain.md)
 
 ### アプリケーション層
 * `application/use_cases`: 1 操作単位のユースケースを定義
 * `application/dtos`: 各ユースケースの Request / Response を定義
 * `application/ports`: 永続化・外部サービスとの Outbound Port（Protocol）を定義
 * `application/errors`: ユースケースが返す標準エラーを定義
+* * 仕様: [docs/spec/application.md](docs/spec/application.md)
 
 ### インターフェイスアダプター層
-* 未実装
+* `interface_adapters/controllers`: 外部入力の検証・変換とユースケース呼び出し（Command / Query refresh）
+* `interface_adapters/presenters`: Query レスポンスの ViewModel 反映（Humble Object）
+* `interface_adapters/mappers`: 表示用 ViewModel への変換（テスト可能な純粋変換）
+* `interface_adapters/view_models`: UI が bind する表示専用状態
+* `interface_adapters/orchestrators`: 非同期 AI 生成 UC の起動と対話パネル refresh
+* `interface_adapters/events` / `interface_adapters/outcomes`: Controller の入出力 DTO
+* `interface_adapters/ports`: ViewModel 更新先・バックグラウンドタスク等の Protocol
+* `interface_adapters/presentation`: 時刻ラベル・エラー文言などの表示定数
+* 仕様: [docs/spec/interface.md](docs/spec/interface.md)
 
 ### フレームワーク&ドライバー層
 * 未実装

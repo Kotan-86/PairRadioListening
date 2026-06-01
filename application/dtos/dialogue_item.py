@@ -1,46 +1,28 @@
-# 仕様: docs/spec/application.md#get_timeline
+# 仕様: docs/spec/application.md#get_dialogue
 from dataclasses import dataclass
-from typing import Literal
 
 from application.errors import InvalidRequest
 from application.result import Err, Ok, Result
 from domain.value_objects.dialogue_speaker import DialogueSpeaker
 from domain.value_objects.lecture_time_anchor import LectureTimeAnchor
 from domain.value_objects.reaction_text import ReactionText
-from domain.value_objects.recording_speaker import RecordingSpeaker
 from domain.value_objects.reply_target import ReplyTarget
-from domain.value_objects.speech_text import SpeechText
-from domain.value_objects.time_range import TimeRange
 
-_USE_CASE = "get_timeline"
+_USE_CASE = "get_dialogue"
 
 
 @dataclass(frozen=True, slots=True)
-class UtteranceTimelineItem:
-    kind: Literal["utterance"]
-    time_range: TimeRange
-    utterance_id: str
-    speech_text: SpeechText
-    speaker: RecordingSpeaker
-
-
-@dataclass(frozen=True, slots=True)
-class ReactionTimelineItem:
-    kind: Literal["reaction"]
-    time_range: TimeRange
+class DialogueItem:
     reaction_id: str
+    dialogue_sequence: int
     reaction_text: ReactionText
     speaker: DialogueSpeaker
     reply_target: ReplyTarget
     lecture_time_anchor: LectureTimeAnchor
-    created_at: int
-
-
-TimelineItem = UtteranceTimelineItem | ReactionTimelineItem
 
 
 @dataclass(frozen=True, slots=True)
-class GetTimelineRequest:
+class GetDialogueRequest:
     lecture_id: str
 
     def validate(self) -> Result[None, InvalidRequest]:
@@ -56,6 +38,6 @@ class GetTimelineRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class GetTimelineResponse:
+class GetDialogueResponse:
     lecture_id: str
-    items: tuple[TimelineItem, ...]
+    items: tuple[DialogueItem, ...]

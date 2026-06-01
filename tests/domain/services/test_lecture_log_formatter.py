@@ -15,6 +15,16 @@ from domain.value_objects.reply_target import ReplyTarget
 from domain.value_objects.lecture_time_anchor import LectureTimeAnchor
 from domain.value_objects.reaction_text import ReactionText
 from domain.value_objects.audio_data import AudioData
+from domain.value_objects.ai_persona_profile import AiPersonaProfile
+
+
+def _single_persona() -> AiPersonaProfile:
+    return AiPersonaProfile(
+        id=uuid4(),
+        display_name="サポートAI",
+        persona_prompt="テスト用ペルソナ",
+    )
+
 
 class TestLectureLogFormatter:
 
@@ -34,13 +44,13 @@ class TestLectureLogFormatter:
             started_at=0,
             ended_at=3000,
             status="active",
-            persona_profiles=[],
+            persona_profiles=[_single_persona()],
         )
         
-        # 1000ms時点の講師の発話
+        # 講師の発話（dialogue_sequence=1 のリアクションより先に並ぶよう start_ms=0）
         utterance = Utterance(
             id=uuid4(),
-            time_range=TimeRange(start_ms=1000, end_ms=1500),
+            time_range=TimeRange(start_ms=0, end_ms=1500),
             speech_text=SpeechText(text="最初のポイントです"),
             speaker=RecordingSpeaker(display_name="講師")
         )
@@ -54,7 +64,7 @@ class TestLectureLogFormatter:
             lecture_time_anchor=LectureTimeAnchor(time_range=TimeRange(start_ms=1000, end_ms=1500), utterance_id=utterance.id),
             reaction_text=ReactionText(text="なるほど、わかりやすい"),
             audio_data=AudioData.empty(),
-            created_at=2000
+            dialogue_sequence=1,
         )
 
         # ---------------------------------------------------------
@@ -74,7 +84,7 @@ class TestLectureLogFormatter:
         # 出力された文字列内に、時系列で情報が含まれているかを検証
         assert "最初のポイントです" in result.content
         assert "なるほど、わかりやすい" in result.content
-        # 講師の発話（1000ms）がリアクション（2000ms）より前に出力されていること（時系列ソートの証明）
+        # 講師の発話（1000ms）がリアクション（dialogue_sequence=1）より前に出力されていること
         assert result.content.index("最初のポイントです") < result.content.index("なるほど、わかりやすい")
 
 
@@ -92,7 +102,7 @@ class TestLectureLogFormatter:
             started_at=0,
             ended_at=1000,
             status="active",
-            persona_profiles=[],
+            persona_profiles=[_single_persona()],
         )
         
         # 意図的に lecture_time_anchor を None にした不正な Reaction を作成

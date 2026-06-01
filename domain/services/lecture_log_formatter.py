@@ -53,7 +53,7 @@ class LectureLogFormatter:
         for u in utterances:
             timeline_items.append((u.time_range.start_ms, "utterance", u))
         for r in reactions:
-            timeline_items.append((r.created_at, "reaction", r))
+            timeline_items.append((r.dialogue_sequence, "reaction", r))
 
         timeline_items.sort(key=lambda item: item[0])
 
@@ -100,7 +100,7 @@ class LectureLogFormatter:
             "reactions": [
                 {
                     "id": str(r.id),
-                    "created_at": r.created_at,
+                    "dialogue_sequence": r.dialogue_sequence,
                     "speaker": {
                         "role": r.speaker.role,
                         "display_name": r.speaker.display_name

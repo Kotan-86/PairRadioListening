@@ -1,3 +1,4 @@
+# MVP スコープ外: docs/spec/domain.md（timeline_atmosphere_assessor は post-MVP）
 from domain.entities.utterance import Utterance
 from domain.entities.reaction import Reaction
 from domain.value_objects.dialogue_policies import AtmosphereLevel

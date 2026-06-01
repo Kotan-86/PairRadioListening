@@ -18,7 +18,6 @@ from application.use_cases.generate_ai_replies_for_user_reaction_use_case import
 )
 from domain.entities.lecture import Lecture
 from domain.entities.reaction import Reaction
-from domain.services.user_reaction_analyzer import UserReactionAnalyzer
 from domain.services.user_reaction_responder import UserReactionResponder
 from domain.value_objects.ai_persona_profile import AiPersonaProfile
 from domain.value_objects.audio_data import AudioData
@@ -34,6 +33,7 @@ class StubLectureRepository:
     by_id: dict[str, Lecture] = field(default_factory=dict)
 
     def save(self, lecture: Lecture) -> Result[None, PersistencePortError]:
+        self.by_id[str(lecture.id)] = lecture
         return Ok(None)
 
     def find_by_id(self, lecture_id: str) -> Result[Lecture | None, PersistencePortError]:
@@ -88,7 +88,7 @@ class StubLlmAnalyzer:
         self,
         reaction_text: str,
         persona_prompt: str,
-        analysis: dict,
+        reply_target_kind: str,
     ) -> dict:
         return {"tone": "neutral", "response_intent": "共感", "reference_facts": []}
 
@@ -99,7 +99,6 @@ def _lecture() -> Lecture:
         title="講義",
         persona_profiles=[
             AiPersonaProfile(id="p1", display_name="AI1", persona_prompt="prompt1"),
-            AiPersonaProfile(id="p2", display_name="AI2", persona_prompt="prompt2"),
         ],
         started_at=0,
     )
@@ -116,7 +115,7 @@ def _user_reaction() -> Reaction:
         ),
         reaction_text=ReactionText(text="なるほど"),
         audio_data=AudioData.empty(),
-        created_at=500,
+        dialogue_sequence=0,
     )
 
 
@@ -131,26 +130,31 @@ def _ai_reaction() -> Reaction:
         ),
         reaction_text=ReactionText(text="AI"),
         audio_data=AudioData.empty(),
-        created_at=600,
+        dialogue_sequence=1,
     )
 
 
 def _use_case(
     text_generator: StubReactionTextGenerator | None = None,
+    lecture_repo: StubLectureRepository | None = None,
+    reaction_repo: StubReactionRepository | None = None,
 ) -> GenerateAiRepliesForUserReactionUseCase:
     return GenerateAiRepliesForUserReactionUseCase(
-        _lecture_repository=StubLectureRepository(by_id={"lecture-1": _lecture()}),
-        _reaction_repository=StubReactionRepository(
-            by_id={"lecture-1": {"user-reaction-1": _user_reaction()}}
-        ),
+        _lecture_repository=lecture_repo
+        or StubLectureRepository(by_id={"lecture-1": _lecture()}),
+        _reaction_repository=reaction_repo
+        or StubReactionRepository(by_id={"lecture-1": {"user-reaction-1": _user_reaction()}}),
         _reaction_text_generator=text_generator or StubReactionTextGenerator(),
-        _user_reaction_analyzer=UserReactionAnalyzer(StubLlmAnalyzer()),
         _user_reaction_responder=UserReactionResponder(StubLlmAnalyzer()),
     )
 
 
 def test_generate_ai_replies_succeeds():
-    use_case = _use_case()
+    lecture_repo = StubLectureRepository(by_id={"lecture-1": _lecture()})
+    reaction_repo = StubReactionRepository(
+        by_id={"lecture-1": {"user-reaction-1": _user_reaction()}}
+    )
+    use_case = _use_case(lecture_repo=lecture_repo, reaction_repo=reaction_repo)
 
     result = use_case.execute(
         GenerateAiRepliesForUserReactionRequest(
@@ -160,7 +164,10 @@ def test_generate_ai_replies_succeeds():
     )
 
     assert result.is_ok()
-    assert len(result.value.reaction_ids) == 2
+    assert result.value.reaction_id
+    assert len(reaction_repo.saved) == 1
+    assert reaction_repo.saved[0].dialogue_sequence == 0
+    assert lecture_repo.by_id["lecture-1"].next_dialogue_sequence == 1
 
 
 def test_generate_ai_replies_fails_when_reaction_not_found():
@@ -168,7 +175,6 @@ def test_generate_ai_replies_fails_when_reaction_not_found():
         _lecture_repository=StubLectureRepository(by_id={"lecture-1": _lecture()}),
         _reaction_repository=StubReactionRepository(),
         _reaction_text_generator=StubReactionTextGenerator(),
-        _user_reaction_analyzer=UserReactionAnalyzer(StubLlmAnalyzer()),
         _user_reaction_responder=UserReactionResponder(StubLlmAnalyzer()),
     )
 
@@ -190,7 +196,6 @@ def test_generate_ai_replies_fails_when_not_user_reaction():
             by_id={"lecture-1": {"ai-reaction-1": _ai_reaction()}}
         ),
         _reaction_text_generator=StubReactionTextGenerator(),
-        _user_reaction_analyzer=UserReactionAnalyzer(StubLlmAnalyzer()),
         _user_reaction_responder=UserReactionResponder(StubLlmAnalyzer()),
     )
 
@@ -237,7 +242,6 @@ def test_generate_ai_replies_fails_when_lecture_not_found():
             by_id={"lecture-1": {"user-reaction-1": _user_reaction()}}
         ),
         _reaction_text_generator=StubReactionTextGenerator(),
-        _user_reaction_analyzer=UserReactionAnalyzer(StubLlmAnalyzer()),
         _user_reaction_responder=UserReactionResponder(StubLlmAnalyzer()),
     )
 

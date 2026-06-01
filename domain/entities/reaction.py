@@ -1,4 +1,4 @@
-# 仕様: docs/spec/domain.md#reaction（集約ルート）
+# 仕様: docs/spec/domain.md#reaction（エンティティ）§4.1
 from dataclasses import dataclass
 
 from domain.entities.entity import Entity, EntityId
@@ -17,4 +17,4 @@ class Reaction(Entity):
     lecture_time_anchor: LectureTimeAnchor
     reaction_text: ReactionText
     audio_data: AudioData
-    created_at: int
+    dialogue_sequence: int

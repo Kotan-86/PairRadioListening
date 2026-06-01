@@ -21,6 +21,8 @@ class AtmosphereLevel(Enum):
     ACTIVE = 3
     ON_FIRE = 4
 
+# UserReactionAnalysisResult / UserReactionIntent / EmotionTone は
+# user_reaction_analyzer（MVP スコープ外）専用。MVP の user_reaction_responder では未使用。
 @dataclass(frozen=True)
 class UserReactionAnalysisResult:
     intent: UserReactionIntent
