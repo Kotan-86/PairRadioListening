@@ -12,6 +12,7 @@ export interface TranscriptLineView {
 export interface TranscriptViewModel {
   lecture_id: string
   lines: TranscriptLineView[]
+  latest_anchor_ms: number
   error_message: string
 }
 

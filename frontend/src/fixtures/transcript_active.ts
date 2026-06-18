@@ -7,6 +7,7 @@ export const MOCK_LECTURE_ID = 'lecture-mock-1'
 export const transcriptActiveFixture: TranscriptViewModel = {
   lecture_id: MOCK_LECTURE_ID,
   error_message: '',
+  latest_anchor_ms: 125000,
   lines: [
     {
       utterance_id: 'utt-001',

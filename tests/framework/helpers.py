@@ -45,6 +45,23 @@ def utterance_body(
     }
 
 
+def reaction_body(
+    *,
+    reaction_text: str = "いい話ですね",
+    lecture_time_anchor: int = 1200,
+    speaker_display_name: str = "ユーザー",
+    reply_target: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "reaction_text": reaction_text,
+        "lecture_time_anchor": lecture_time_anchor,
+        "speaker_display_name": speaker_display_name,
+    }
+    if reply_target is not None:
+        body["reply_target"] = reply_target
+    return body
+
+
 def amivoice_utterance_payload(
     *,
     utterance_id: str = "amivoice-utt-1",

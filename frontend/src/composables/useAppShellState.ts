@@ -6,7 +6,12 @@ import type {
   TranscriptViewModel,
 } from '../types/view_models'
 import type { StartLectureForm } from '../types/lecture'
-import { endLecture as endLectureApi, startLecture as startLectureApi } from '../api/lectureApi'
+import {
+  endLecture as endLectureApi,
+  fetchDialogue,
+  postUserReaction,
+  startLecture as startLectureApi,
+} from '../api/lectureApi'
 import { startViewModelPolling } from '../services/pollingService'
 import { transcriptActiveFixture } from '../fixtures/transcript_active'
 import { transcriptErrorFixture } from '../fixtures/transcript_error'
@@ -18,6 +23,7 @@ export type FixturePreset = 'idle' | 'active' | 'transcript_error' | 'dialogue_e
 const emptyTranscript = (lecture_id: string): TranscriptViewModel => ({
   lecture_id,
   lines: [],
+  latest_anchor_ms: 0,
   error_message: '',
 })
 
@@ -41,7 +47,6 @@ export function useAppShellState() {
 
   const reactionText = ref('')
   const speakerDisplayName = ref('ユーザー')
-  const lectureTimeAnchor = ref(125000)
 
   const transcript = ref<TranscriptViewModel>(emptyTranscript(''))
   const dialogue = ref<DialogueViewModel>(emptyDialogue(''))
@@ -50,6 +55,10 @@ export function useAppShellState() {
 
   const controlsDisabled = computed(() => sessionStatus.value === 'ended')
   const reactionFormEnabled = computed(() => sessionStatus.value === 'active')
+  const reactionSubmitDisabled = computed(
+    () =>
+      !reactionText.value.trim() || transcript.value.latest_anchor_ms === 0,
+  )
 
   function stopViewModelPolling() {
     stopPolling?.()
@@ -153,9 +162,35 @@ export function useAppShellState() {
     }
   }
 
-  function submitReaction() {
+  async function submitReaction() {
     if (!reactionFormEnabled.value) return
+
+    const id = lecture_id.value
+    const text = reactionText.value.trim()
+    const anchor = transcript.value.latest_anchor_ms
+    if (!id || !text || anchor === 0) return
+
+    if (!useLiveApi.value) {
+      reactionText.value = ''
+      return
+    }
+
+    apiError.value = null
+    const result = await postUserReaction(id, {
+      reaction_text: text,
+      lecture_time_anchor: anchor,
+      speaker_display_name: speakerDisplayName.value,
+    })
+    if (result.status !== 200 || !result.body.success) {
+      apiError.value = result.body.error_kind || 'post_user_reaction_failed'
+      return
+    }
+
     reactionText.value = ''
+    const dialogueResult = await fetchDialogue(id)
+    if (dialogueResult.status === 200) {
+      dialogue.value = dialogueResult.body
+    }
   }
 
   onUnmounted(() => {
@@ -171,11 +206,11 @@ export function useAppShellState() {
     startLectureForm,
     reactionText,
     speakerDisplayName,
-    lectureTimeAnchor,
     transcript,
     dialogue,
     controlsDisabled,
     reactionFormEnabled,
+    reactionSubmitDisabled,
     startLecture,
     endLecture,
     setFixturePreset,

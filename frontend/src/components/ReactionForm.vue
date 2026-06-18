@@ -6,13 +6,12 @@ defineProps<{
   status: LectureSessionStatus
   reaction_text: string
   speaker_display_name: string
-  lecture_time_anchor: number
+  submit_disabled: boolean
 }>()
 
 const emit = defineEmits<{
   'update:reaction_text': [value: string]
   'update:speaker_display_name': [value: string]
-  'update:lecture_time_anchor': [value: number]
   submit: []
 }>()
 </script>
@@ -33,17 +32,6 @@ const emit = defineEmits<{
     </div>
 
     <div class="form-field">
-      <label for="lecture-time-anchor">講義時刻（ms）</label>
-      <input
-        id="lecture-time-anchor"
-        type="number"
-        :value="lecture_time_anchor"
-        :disabled="status !== 'active'"
-        @input="emit('update:lecture_time_anchor', Number(($event.target as HTMLInputElement).value))"
-      />
-    </div>
-
-    <div class="form-field">
       <label for="reaction-text">リアクション</label>
       <textarea
         id="reaction-text"
@@ -54,13 +42,17 @@ const emit = defineEmits<{
       />
     </div>
 
+    <p v-if="status === 'active' && submit_disabled" class="form-note">
+      文字起こしが始まると投稿できます
+    </p>
+
     <p class="form-note">将来: AI 行をクリックして返信先（reply_target）を選択</p>
 
     <div class="form-actions">
       <button
         type="button"
         class="primary"
-        :disabled="status !== 'active' || !reaction_text.trim()"
+        :disabled="status !== 'active' || submit_disabled || !reaction_text.trim()"
         @click="emit('submit')"
       >
         投稿

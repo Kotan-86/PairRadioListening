@@ -97,6 +97,7 @@ class TranscriptLineSchema(_SnakeModel):
 class TranscriptViewModelSchema(_SnakeModel):
     lecture_id: str
     lines: list[TranscriptLineSchema]
+    latest_anchor_ms: int
     error_message: str
 
     @classmethod
@@ -104,6 +105,7 @@ class TranscriptViewModelSchema(_SnakeModel):
         return cls(
             lecture_id=view_model.lecture_id,
             lines=[_transcript_line(line) for line in view_model.lines],
+            latest_anchor_ms=view_model.latest_anchor_ms,
             error_message=view_model.error_message,
         )
 

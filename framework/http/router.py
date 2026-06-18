@@ -100,6 +100,7 @@ def create_http_router(deps: AppDeps) -> APIRouter:
             return TranscriptViewModelSchema(
                 lecture_id=lecture_id,
                 lines=[],
+                latest_anchor_ms=0,
                 error_message="transcript is not available",
             )
         return TranscriptViewModelSchema.from_view_model(view_model)

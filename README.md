@@ -143,6 +143,29 @@ uv run pytest -m "phase1c and not integration" -v   # CI 相当（Wrp 単体・F
 uv run pytest -m phase1c -v                         # integration 含む（実キー・VB-Cable は任意）
 ```
 
+**Phase2 — タイムライン投稿**
+
+| 項目 | 内容 |
+|------|------|
+| 前提 | Phase1 と同様にバックエンド・フロント起動。講義 `active` 中 |
+| スコープ | ユーザー投稿 → 対話パネルに自分の行（話者・本文・時刻ラベル）。`latest_anchor_ms` による anchor 自動設定 |
+| スコープ外 | AI 返信（`NoOpAiReactionOrchestrator` のまま）、`reply_target` UI 選択、投稿編集・削除 |
+
+**手動受入（Phase2）**
+
+1. バックエンド・フロントエンドを起動する
+2. **講義開始** → 文字起こしが 1 件以上あること（AmiVoice または `POST /internal/amivoice/utterances`）
+3. 感想を入力して **投稿** → 右パネル（対話）に自分の行が表示され、本文の下に時刻ラベルが右寄せで出ること
+4. 文字起こし 0 件の間は投稿ボタンが無効であること
+5. **講義終了** 後は投稿できないこと
+6. AI 行は出ないこと
+
+#### テスト（Phase2）
+
+```bash
+uv run pytest -m phase2 -v
+```
+
 **社内プロキシ環境:** AmiVoice 接続は Wrp の `setProxyServerName` に `.env` の `AMIVOICE_PROXY_SERVER_NAME`（`user:password@proxyhost:port`）を渡します。`HTTP_PROXY` からの自動合成は行いません。
 
 ### インフラ

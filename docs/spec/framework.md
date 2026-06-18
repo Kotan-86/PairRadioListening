@@ -340,6 +340,12 @@ create_app()
 | 対話行 | `speaker_label`, `body`, `reference_time_label`, `reference_quote_label`（空は非表示） |
 | パネルエラー | `error_message` が非空なら表示し `lines` は空 |
 
+**対話行レイアウト（MVP）:** 表示順は **話者 → 本文 → `reference_time_label`**。`reference_time_label` は本文の下・右寄せ。`reference_quote_label` は AI 行用（Phase3）で現状どおり。
+
+**`ReactionForm`（MVP）:** `transcript_view_model.latest_anchor_ms` を `lecture_time_anchor` として POST する。ms 手入力 UI は持たない。`latest_anchor_ms === 0`（utterance 未確立）の間は投稿ボタンを無効にする。
+
+**投稿成功後:** `GET .../dialogue` を **1 回** 実行し対話パネルを更新する（§7.3 ポーリングに加え、投稿直後の即時反映を明記）。
+
 ### 7.3 ポーリング
 
 | 状態 | 動作 |
@@ -347,7 +353,9 @@ create_app()
 | 講義 `active` | `GET .../transcript` と `GET .../dialogue` を間隔実行 |
 | 講義未開始 / 終了後 | ポーリング停止 |
 
-投稿・発話記録直後の即時反映は、ポーリング 1 回または手動 refresh で足りる（MVP）。
+投稿・発話記録直後の即時反映は、ポーリング 1 回または手動 refresh で足りる（MVP）。ユーザー投稿直後は上記のとおり `GET .../dialogue` を 1 回追加する。
+
+**Post-MVP:** `reference_time_label` クリックで文字起こしパネルを該当時刻へスクロール（Phase2 では表示のみ）。
 
 ### 7.4 受入基準（フロント）
 
@@ -355,6 +363,7 @@ create_app()
 2. 表示文言はすべて API から受け取った文字列をそのまま表示する
 3. 講義開始成功後のみ `lecture_id` 付き API を呼ぶ
 4. 講義中、文字起こしリスト末尾付近にいる状態で新規行が追加されたとき、手動スクロールなしで最新行が表示領域内に入る
+5. 講義中、対話リスト末尾付近にいる状態で新規行が追加されたとき（投稿直後の refresh またはポーリング更新を含む）、手動スクロールなしで最新行が表示領域内に入る。過去ログを上方向へスクロールして読んでいる間は位置を動かさない
 
 ## 8. 受入基準（Framework 横断）
 

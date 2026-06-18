@@ -14,4 +14,5 @@ class TranscriptLineView:
 class TranscriptViewModel:
     lecture_id: str
     lines: tuple[TranscriptLineView, ...]
+    latest_anchor_ms: int
     error_message: str

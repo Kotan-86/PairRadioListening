@@ -43,6 +43,7 @@ def test_view_model_store_present_and_read(client: TestClient, deps) -> None:
                 body="こんにちは",
             ),
         ),
+        latest_anchor_ms=0,
         error_message="",
     )
     deps.transcript_store.present(view_model)

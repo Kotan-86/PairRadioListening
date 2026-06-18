@@ -150,6 +150,8 @@
 
 **備考（`reply_target`）:** Interface 層は通常、ユーザーが AI 行を選んだときのみ `reaction` を指定する。それ以外は省略し、UC が直近 `utterance` を解決する。
 
+**備考（MVP anchor 規則）:** MVP の通常投稿（`reply_target` 省略）では、Interface 層が `lecture_time_anchor` に **直近 `utterance` の `time_range.end_ms`** を用いる。`reply_target`（直近 `utterance`）と時刻上は一致するが、フィールドは別（`reply_target` は返信先、`lecture_time_anchor` は投稿時点の講義時間軸）。
+
 #### PostUserReactionResponse
 
 | フィールド | 型（概念） | 必須 | 説明 |

@@ -27,6 +27,7 @@ class FakeTranscriptMapper:
         return self.success_view_model or TranscriptViewModel(
             lecture_id=response.lecture_id,
             lines=(),
+            latest_anchor_ms=0,
             error_message="",
         )
 
@@ -36,6 +37,7 @@ class FakeTranscriptMapper:
         return self.error_view_model or TranscriptViewModel(
             lecture_id=lecture_id,
             lines=(),
+            latest_anchor_ms=0,
             error_message="error",
         )
 
@@ -52,6 +54,7 @@ def test_transcript_presenter_present_replaces_store_view_model():
                 body="本文",
             ),
         ),
+        latest_anchor_ms=0,
         error_message="",
     )
     store = SpyViewModelStore()
@@ -78,6 +81,7 @@ def test_transcript_presenter_present_error_clears_lines_and_sets_error_message(
                     body="古い内容",
                 ),
             ),
+            latest_anchor_ms=0,
             error_message="",
         )
     )

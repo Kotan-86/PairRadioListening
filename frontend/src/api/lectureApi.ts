@@ -16,6 +16,13 @@ export interface EndLectureOutcome {
   error_kind: string
 }
 
+export interface PostUserReactionOutcome {
+  success: boolean
+  reaction_id: string
+  lecture_id: string
+  error_kind: string
+}
+
 export async function startLecture(form: StartLectureForm) {
   const persona = form.persona_profiles[0]
   return apiFetch<StartLectureOutcome>('/api/lectures/start', {
@@ -45,4 +52,18 @@ export async function fetchTranscript(lecture_id: string) {
 
 export async function fetchDialogue(lecture_id: string) {
   return apiFetch<DialogueViewModel>(`/api/lectures/${lecture_id}/dialogue`)
+}
+
+export async function postUserReaction(
+  lecture_id: string,
+  body: {
+    reaction_text: string
+    lecture_time_anchor: number
+    speaker_display_name: string
+  },
+) {
+  return apiFetch<PostUserReactionOutcome>(`/api/lectures/${lecture_id}/reactions`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }

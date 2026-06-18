@@ -15,10 +15,10 @@ const {
   startLectureForm,
   reactionText,
   speakerDisplayName,
-  lectureTimeAnchor,
   transcript,
   dialogue,
   controlsDisabled,
+  reactionSubmitDisabled,
   startLecture,
   endLecture,
   setFixturePreset,
@@ -76,10 +76,9 @@ function onFixtureChange(event: Event) {
         :status="sessionStatus"
         :reaction_text="reactionText"
         :speaker_display_name="speakerDisplayName"
-        :lecture_time_anchor="lectureTimeAnchor"
+        :submit_disabled="reactionSubmitDisabled"
         @update:reaction_text="reactionText = $event"
         @update:speaker_display_name="speakerDisplayName = $event"
-        @update:lecture_time_anchor="lectureTimeAnchor = $event"
         @submit="submitReaction"
       />
     </footer>

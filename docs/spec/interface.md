@@ -729,7 +729,7 @@ View は **ViewModel のみ** を bind する。フォーマット・`reply_targ
 - refresh 成功・失敗のどちらも View が bind する状態を ViewModel で統一する（§7.2）
 - Interface 固有の見せ方を Application / Domain から分離したまま保つ
 
-**View の責務（MVP）:** 各フィールドを所定の UI スロットに bind する。空文字列のラベルスロットは非表示としてよい。並べ替え・`error_kind` の解釈・日時計算は行わない。文字起こしパネルで新規 `utterance` 行が追加されたとき、ユーザーがリスト末尾付近にいれば最新行が見える位置へ追従する。過去を読むために上方向へスクロールしている間は位置を動かさない。
+**View の責務（MVP）:** 各フィールドを所定の UI スロットに bind する。空文字列のラベルスロットは非表示としてよい。並べ替え・`error_kind` の解釈・日時計算は行わない。文字起こしパネルで新規 `utterance` 行が追加されたとき、および対話パネルで新規 `reaction` 行が追加されたとき、ユーザーがリスト末尾付近にいれば最新行が見える位置へ追従する。過去を読むために上方向へスクロールしている間は位置を動かさない。
 
 ### 7.2 パネル共通：`error_message` と refresh 失敗
 
@@ -756,7 +756,10 @@ View は **ViewModel のみ** を bind する。フォーマット・`reply_targ
 |------------|-----------|------|------|
 | `lecture_id` | 文字列 | ○ | 表示中の講義 |
 | `lines` | `transcript_line_view` の配列 | ○ | 上から下へ表示順（`get_transcript` の `items` 順と一致） |
+| `latest_anchor_ms` | 整数 | ○ | 直近 `utterance` の `end_ms`。`lines` が空のとき **0**（タイムライン未確立） |
 | `error_message` | 文字列 | ○ | §7.2 |
+
+**Why（`latest_anchor_ms`）:** View で時刻計算させず、投稿用 anchor を API から渡す（§7.1 準拠）。
 
 #### `transcript_line_view`
 
