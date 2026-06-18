@@ -13,7 +13,12 @@ from framework.settings import load_settings
 @pytest.fixture
 def deps() -> AppDeps:
     # .env の AMIVOICE_API_KEY があっても HTTP 統合テストは Null Bridge を使う。
-    settings = replace(load_settings(), amivoice_api_key=None)
+    settings = replace(
+        load_settings(),
+        amivoice_api_key=None,
+        gemini_api_key=None,
+        llm_api_key=None,
+    )
     return build_deps(settings)
 
 

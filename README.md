@@ -149,7 +149,7 @@ uv run pytest -m phase1c -v                         # integration 含む（実�
 |------|------|
 | 前提 | Phase1 と同様にバックエンド・フロント起動。講義 `active` 中 |
 | スコープ | ユーザー投稿 → 対話パネルに自分の行（話者・本文・時刻ラベル）。`latest_anchor_ms` による anchor 自動設定 |
-| スコープ外 | AI 返信（`NoOpAiReactionOrchestrator` のまま）、`reply_target` UI 選択、投稿編集・削除 |
+| スコープ外 | `reply_target` UI 選択、投稿編集・削除 |
 
 **手動受入（Phase2）**
 
@@ -158,12 +158,36 @@ uv run pytest -m phase1c -v                         # integration 含む（実�
 3. 感想を入力して **投稿** → 右パネル（対話）に自分の行が表示され、本文の下に時刻ラベルが右寄せで出ること
 4. 文字起こし 0 件の間は投稿ボタンが無効であること
 5. **講義終了** 後は投稿できないこと
-6. AI 行は出ないこと
 
 #### テスト（Phase2）
 
 ```bash
 uv run pytest -m phase2 -v
+```
+
+**Phase3 — AI との壁打ち**
+
+| 項目 | 内容 |
+|------|------|
+| 必須 | `.env` に `LLM_API_KEY` または `GEMINI_API_KEY`（[Google AI Studio](https://aistudio.google.com/) の API キー） |
+| 任意 | `LLM_MODEL`（省略時 `gemini-3.1-flash-lite`） |
+| 任意 | `LLM_RPM_LIMIT` / `LLM_RPD_LIMIT`（省略時 15 / 500） |
+| 前提 | Phase2 と同様にバックエンド・フロント起動。講義 `active` 中 |
+| スコープ | ユーザー投稿成功後、非同期で AI `reaction` が 1 件生成され対話パネルに表示。`reference_quote_label` でユーザー投稿を参照 |
+| スコープ外 | 講師発話トリガーの AI 生成、`reply_target` UI 選択（Phase4） |
+
+**手動受入（Phase3）**
+
+1. `.env` に LLM API キーを設定し、バックエンド・フロントエンドを起動する
+2. **講義開始** → 文字起こしが 1 件以上あること
+3. 感想を **投稿** → 直後は対話パネルにユーザー行のみ表示されること
+4. 数秒以内に AI 行が追加され、ユーザー投稿への `reference_quote_label` が表示されること
+5. 文字起こし（`record_utterance`）のみでは AI 行が増えないこと
+
+#### テスト（Phase3）
+
+```bash
+uv run pytest -m phase3 -v
 ```
 
 **社内プロキシ環境:** AmiVoice 接続は Wrp の `setProxyServerName` に `.env` の `AMIVOICE_PROXY_SERVER_NAME`（`user:password@proxyhost:port`）を渡します。`HTTP_PROXY` からの自動合成は行いません。

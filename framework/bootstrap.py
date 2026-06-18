@@ -11,6 +11,9 @@ from application.dtos.post_user_reaction_response import PostUserReactionRespons
 from application.use_cases.end_lecture_use_case import EndLectureUseCase
 from application.use_cases.get_dialogue_use_case import GetDialogueUseCase
 from application.use_cases.get_transcript_use_case import GetTranscriptUseCase
+from application.use_cases.generate_ai_replies_for_user_reaction_use_case import (
+    GenerateAiRepliesForUserReactionUseCase,
+)
 from application.use_cases.post_user_reaction_use_case import PostUserReactionUseCase
 from application.use_cases.record_utterance_use_case import RecordUtteranceUseCase
 from application.use_cases.start_lecture_use_case import StartLectureUseCase
@@ -26,6 +29,7 @@ from interface_adapters.controllers.refresh_transcript_controller import (
     RefreshTranscriptController,
 )
 from interface_adapters.controllers.start_lecture_controller import StartLectureController
+from domain.services.user_reaction_responder import UserReactionResponder
 from framework.amivoice.amivoice_streaming_bridge import AmiVoiceStreamingBridge
 from framework.amivoice.audio_capture_source import (
     AudioCaptureSource,
@@ -46,7 +50,15 @@ from interface_adapters.presenters.transcript_presenter import TranscriptPresent
 from interface_adapters.view_models.dialogue_view_model import DialogueViewModel
 from interface_adapters.view_models.transcript_view_model import TranscriptViewModel
 from framework.http.router import create_http_router
+from framework.llm.fake_llm_analyzer import FakeLlmAnalyzer
+from framework.llm.fake_reaction_text_generator import FakeReactionTextGenerator
+from framework.llm.gemini_client import GeminiClient
+from framework.llm.gemini_llm_analyzer_driver import GeminiLlmAnalyzerDriver
+from framework.llm.gemini_reaction_text_generator import GeminiReactionTextGenerator
+from framework.llm.llm_rate_limiter import LlmRateLimiter
 from framework.schedulers.immediate_task_scheduler import ImmediateTaskScheduler
+from framework.schedulers.thread_pool_task_scheduler import ThreadPoolTaskScheduler
+from interface_adapters.orchestrators.ai_reaction_orchestrator import AiReactionOrchestrator
 from framework.logging_config import configure_logging
 from framework.settings import Settings, load_settings
 from framework.stores.lecture_view_model_store import LectureViewModelStore
@@ -72,9 +84,9 @@ class AppDeps:
     reaction_repository: InMemoryReactionRepository
     transcript_store: LectureViewModelStore[TranscriptViewModel, GetTranscriptError]
     dialogue_store: LectureViewModelStore[DialogueViewModel, GetDialogueError]
-    task_scheduler: ImmediateTaskScheduler
+    task_scheduler: ImmediateTaskScheduler | ThreadPoolTaskScheduler
     amivoice_bridge: AmiVoiceStreamingBridge
-    orchestrator: NoOpAiReactionOrchestrator
+    orchestrator: NoOpAiReactionOrchestrator | AiReactionOrchestrator
     start_lecture: BridgeAwareStartLectureController
     end_lecture: BridgeAwareEndLectureController
     record_utterance: RecordUtteranceController
@@ -111,10 +123,60 @@ def _resolve_amivoice_wiring(
     return NullAmiVoiceWsSessionFactory(), None
 
 
+def _build_ai_orchestrator(
+    *,
+    settings: Settings,
+    lecture_repository: InMemoryLectureRepository,
+    reaction_repository: InMemoryReactionRepository,
+    refresh_dialogue: RefreshDialogueController,
+    task_scheduler: ImmediateTaskScheduler | ThreadPoolTaskScheduler,
+    orchestrator_override: NoOpAiReactionOrchestrator | AiReactionOrchestrator | None,
+    fake_analyzer: FakeLlmAnalyzer | None,
+    fake_text_generator: FakeReactionTextGenerator | None,
+) -> NoOpAiReactionOrchestrator | AiReactionOrchestrator:
+    if orchestrator_override is not None:
+        return orchestrator_override
+
+    api_key = settings.effective_llm_api_key
+    if not api_key:
+        return NoOpAiReactionOrchestrator()
+
+    if api_key == "fake" or fake_analyzer is not None or fake_text_generator is not None:
+        analyzer = fake_analyzer or FakeLlmAnalyzer()
+        text_generator = fake_text_generator or FakeReactionTextGenerator()
+    else:
+        rate_limiter = LlmRateLimiter(
+            rpm_limit=settings.llm_rpm_limit,
+            rpd_limit=settings.llm_rpd_limit,
+        )
+        gemini_client = GeminiClient(
+            api_key=api_key,
+            model=settings.llm_model,
+            rate_limiter=rate_limiter,
+        )
+        analyzer = GeminiLlmAnalyzerDriver(_client=gemini_client)
+        text_generator = GeminiReactionTextGenerator(_client=gemini_client)
+
+    generate_uc = GenerateAiRepliesForUserReactionUseCase(
+        _lecture_repository=lecture_repository,
+        _reaction_repository=reaction_repository,
+        _reaction_text_generator=text_generator,
+        _user_reaction_responder=UserReactionResponder(analyzer),
+    )
+    return AiReactionOrchestrator(
+        _generate_for_user_reaction_use_case=generate_uc.execute,
+        _dialogue_view_port=refresh_dialogue,
+        _task_scheduler=task_scheduler,
+    )
+
+
 def build_deps(
     settings: Settings | None = None,
     *,
-    orchestrator: NoOpAiReactionOrchestrator | None = None,
+    orchestrator: NoOpAiReactionOrchestrator | AiReactionOrchestrator | None = None,
+    task_scheduler: ImmediateTaskScheduler | ThreadPoolTaskScheduler | None = None,
+    fake_analyzer: FakeLlmAnalyzer | None = None,
+    fake_text_generator: FakeReactionTextGenerator | None = None,
     session_factory: AmiVoiceWsSessionFactory | None = None,
     capture_source: AudioCaptureSource | None = None,
 ) -> AppDeps:
@@ -127,7 +189,11 @@ def build_deps(
     dialogue_store: LectureViewModelStore[DialogueViewModel, GetDialogueError] = (
         LectureViewModelStore()
     )
-    task_scheduler = ImmediateTaskScheduler()
+    task_scheduler = task_scheduler or (
+        ThreadPoolTaskScheduler()
+        if (settings or load_settings()).effective_llm_api_key
+        else ImmediateTaskScheduler()
+    )
 
     start_lecture_uc = StartLectureUseCase(_lecture_repository=lecture_repository)
     end_lecture_uc = EndLectureUseCase(_lecture_repository=lecture_repository)
@@ -159,7 +225,16 @@ def build_deps(
         _transcript_use_case=get_transcript_uc.execute,
         _presenter=dialogue_presenter,
     )
-    orchestrator = orchestrator or NoOpAiReactionOrchestrator()
+    orchestrator = _build_ai_orchestrator(
+        settings=settings,
+        lecture_repository=lecture_repository,
+        reaction_repository=reaction_repository,
+        refresh_dialogue=refresh_dialogue,
+        task_scheduler=task_scheduler,
+        orchestrator_override=orchestrator,
+        fake_analyzer=fake_analyzer,
+        fake_text_generator=fake_text_generator,
+    )
     record_utterance = RecordUtteranceController(_use_case=record_utterance_uc.execute)
     ws_factory, audio_capture = _resolve_amivoice_wiring(
         settings,

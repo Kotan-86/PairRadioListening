@@ -13,6 +13,32 @@ from domain.value_objects.time_range import TimeRange
 from domain.value_objects.reaction_text import ReactionText
 from domain.value_objects.audio_data import AudioData
 from domain.value_objects.ai_persona_profile import AiPersonaProfile
+from domain.value_objects.lecture_llm_context import LectureLlmContext, UtteranceExcerpt
+from domain.value_objects.reply_target_focus import UtteranceReplyTargetFocus
+
+
+def _lecture_llm_context() -> LectureLlmContext:
+    return LectureLlmContext(
+        anchor_ms=2000,
+        utterance_excerpts=(
+            UtteranceExcerpt(
+                utterance_id="utt-1",
+                start_ms=0,
+                end_ms=1200,
+                speech_text="講義抜粋",
+            ),
+        ),
+    )
+
+
+def _reply_target_focus() -> UtteranceReplyTargetFocus:
+    return UtteranceReplyTargetFocus(
+        kind="utterance",
+        utterance_id="utt-1",
+        speech_text="講義抜粋",
+        start_ms=0,
+        end_ms=1200,
+    )
 
 
 def _reaction(reply_target_kind: str) -> Reaction:
@@ -52,7 +78,14 @@ def test_user_reaction_responder_determine_policy_by_reply_target_kind(
         persona_prompt="あなたは親切なAIです",
     )
 
-    policy = responder.determine_policy(reaction=reaction, persona=persona)
+    context = _lecture_llm_context()
+    focus = _reply_target_focus()
+    policy = responder.determine_policy(
+        reaction=reaction,
+        persona=persona,
+        lecture_llm_context=context,
+        reply_target_focus=focus,
+    )
 
     assert policy.persona_id == persona.id
     assert policy.tone == "共感的"
@@ -62,4 +95,6 @@ def test_user_reaction_responder_determine_policy_by_reply_target_kind(
         reaction_text="ここが少しわかりにくいです",
         persona_prompt="あなたは親切なAIです",
         reply_target_kind=reply_target_kind,
+        lecture_llm_context=context,
+        reply_target_focus=focus,
     )

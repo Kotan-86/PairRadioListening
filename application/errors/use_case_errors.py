@@ -51,6 +51,7 @@ GenerateAiRepliesForUserReactionError = (
     | LectureClosed
     | ReactionNotFound
     | InvalidUserReaction
+    | ReplyTargetNotFound
     | AiPolicyGenerationFailed
     | AiTextGenerationFailed
     | PersistenceFailed

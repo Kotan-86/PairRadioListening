@@ -72,7 +72,9 @@ class StubReactionTextGenerator:
             return Err(ReactionTextPortError(persona_id=str(persona.id), reason="failed"))
         return Ok(f"AI reaction for {persona.display_name}")
 
-    def generate_for_user_reaction_reply(self, policy, reaction, persona) -> Result[str, ReactionTextPortError]:
+    def generate_for_user_reaction_reply(
+        self, policy, reaction, persona, lecture_llm_context, reply_target_focus
+    ) -> Result[str, ReactionTextPortError]:
         return Ok("reply")
 
 
@@ -88,6 +90,8 @@ class StubLlmAnalyzer:
         reaction_text: str,
         persona_prompt: str,
         reply_target_kind: str,
+        lecture_llm_context=None,
+        reply_target_focus=None,
     ) -> dict:
         return {"tone": "neutral", "response_intent": "共感", "reference_facts": []}
 
