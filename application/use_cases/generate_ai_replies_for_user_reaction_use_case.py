@@ -12,6 +12,7 @@ from application.errors import (
     LectureClosed,
     LectureNotFound,
     ReactionNotFound,
+    ReplyTargetNotFound,
 )
 from application.errors.use_case_errors import GenerateAiRepliesForUserReactionError
 from application.ports.lecture_repository import LectureRepository
@@ -23,6 +24,8 @@ from application.ports.mappers import (
 from application.ports.reaction_repository import ReactionRepository
 from application.ports.reaction_text_generator import ReactionTextGeneratorPort
 from application.result import Err, Ok, Result
+from application.services.build_lecture_llm_context import build_lecture_llm_context
+from application.services.build_reply_target_focus import build_reply_target_focus
 from domain.entities.reaction import Reaction
 from domain.services.user_reaction_responder import UserReactionResponder
 from domain.value_objects.audio_data import AudioData
@@ -81,10 +84,38 @@ class GenerateAiRepliesForUserReactionUseCase:
 
         persona = lecture.persona_profiles[0]
 
+        lecture_llm_context = build_lecture_llm_context(lecture, user_reaction)
+
+        target_reaction: Reaction | None = None
+        if user_reaction.reply_target.reply_target_kind == "reaction":
+            target_result = self._reaction_repository.find_by_id(
+                request.lecture_id,
+                user_reaction.reply_target.reply_target_id,
+            )
+            if target_result.is_err():
+                return Err(to_persistence_failed(_USE_CASE, target_result.error))
+            target_reaction = target_result.value
+
+        reply_target_focus = build_reply_target_focus(
+            lecture,
+            user_reaction,
+            target_reaction=target_reaction,
+        )
+        if reply_target_focus is None:
+            return Err(
+                ReplyTargetNotFound(
+                    lecture_id=request.lecture_id,
+                    reply_target_kind=user_reaction.reply_target.reply_target_kind,
+                    reply_target_id=user_reaction.reply_target.reply_target_id,
+                )
+            )
+
         try:
             policy = self._user_reaction_responder.determine_policy(
                 reaction=user_reaction,
                 persona=persona,
+                lecture_llm_context=lecture_llm_context,
+                reply_target_focus=reply_target_focus,
             )
         except (ValueError, RuntimeError):
             return Err(
@@ -99,6 +130,8 @@ class GenerateAiRepliesForUserReactionUseCase:
             policy=policy,
             reaction=user_reaction,
             persona=persona,
+            lecture_llm_context=lecture_llm_context,
+            reply_target_focus=reply_target_focus,
         )
         if text_result.is_err():
             return Err(

@@ -9,7 +9,7 @@ from interface_adapters.controllers.record_utterance_controller import (
 from interface_adapters.events.speech_recognition_utterance_event import (
     SpeechRecognitionUtteranceEvent,
 )
-from tests.interface_adapters.conftest import SpyOrchestrator, StubUseCase
+from tests.interface_adapters.conftest import StubUseCase
 
 
 def _event(**kwargs) -> SpeechRecognitionUtteranceEvent:
@@ -25,17 +25,13 @@ def _event(**kwargs) -> SpeechRecognitionUtteranceEvent:
     return SpeechRecognitionUtteranceEvent(**defaults)
 
 
-def test_record_utterance_controller_calls_use_case_and_orchestrator_on_success():
+def test_record_utterance_controller_calls_use_case_on_success():
     use_case = StubUseCase(
         result=Ok(
             RecordUtteranceResponse(utterance_id="utt-1", lecture_id="lecture-1")
         ),
     )
-    orchestrator = SpyOrchestrator()
-    controller = RecordUtteranceController(
-        _use_case=use_case.execute,
-        _orchestrator=orchestrator,
-    )
+    controller = RecordUtteranceController(_use_case=use_case.execute)
 
     outcome = controller.execute(_event())
 
@@ -45,7 +41,7 @@ def test_record_utterance_controller_calls_use_case_and_orchestrator_on_success(
     assert request.speech_text.text == "こんにちは"
     assert request.speaker.role == "lecturer"
     assert outcome.success is True
-    assert len(orchestrator.utterance_recorded) == 1
+    assert outcome.utterance_id == "utt-1"
 
 
 def test_record_utterance_controller_rejects_invalid_time_range():
@@ -54,29 +50,20 @@ def test_record_utterance_controller_rejects_invalid_time_range():
             RecordUtteranceResponse(utterance_id="utt-1", lecture_id="lecture-1")
         ),
     )
-    orchestrator = SpyOrchestrator()
-    controller = RecordUtteranceController(
-        _use_case=use_case.execute,
-        _orchestrator=orchestrator,
-    )
+    controller = RecordUtteranceController(_use_case=use_case.execute)
 
     outcome = controller.execute(_event(start_ms=2000, end_ms=1000))
 
     assert use_case.requests == []
-    assert orchestrator.utterance_recorded == []
     assert outcome.success is False
     assert outcome.error_kind == "invalid_request"
 
 
-def test_record_utterance_controller_does_not_call_orchestrator_on_failure():
+def test_record_utterance_controller_returns_error_on_use_case_failure():
     use_case = StubUseCase(result=Err(LectureNotFound(lecture_id="missing")))
-    orchestrator = SpyOrchestrator()
-    controller = RecordUtteranceController(
-        _use_case=use_case.execute,
-        _orchestrator=orchestrator,
-    )
+    controller = RecordUtteranceController(_use_case=use_case.execute)
 
     outcome = controller.execute(_event(lecture_id="missing"))
 
     assert outcome.success is False
-    assert orchestrator.utterance_recorded == []
+    assert outcome.error_kind == "lecture_not_found"

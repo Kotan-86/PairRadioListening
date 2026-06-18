@@ -12,6 +12,7 @@ class ErrorViewModelMapper:
         return TranscriptViewModel(
             lecture_id=lecture_id,
             lines=(),
+            latest_anchor_ms=0,
             error_message=error_message_for(error),
         )
 

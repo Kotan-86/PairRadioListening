@@ -52,3 +52,37 @@ def test_transcript_mapper_success_has_empty_error_message():
     view_model = mapper.to_view_model(make_get_transcript_response())
 
     assert view_model.error_message == ""
+
+
+def test_transcript_mapper_latest_anchor_ms_is_last_item_end_ms():
+    response = make_get_transcript_response(
+        items=(
+            make_transcript_item(utterance_id="u1", start_ms=0, end_ms=1200),
+            make_transcript_item(utterance_id="u2", start_ms=1300, end_ms=2500),
+        )
+    )
+    mapper = TranscriptViewModelMapper()
+
+    view_model = mapper.to_view_model(response)
+
+    assert view_model.latest_anchor_ms == 2500
+
+
+def test_transcript_mapper_latest_anchor_ms_is_zero_when_items_empty():
+    mapper = TranscriptViewModelMapper()
+
+    view_model = mapper.to_view_model(make_get_transcript_response(items=()))
+
+    assert view_model.latest_anchor_ms == 0
+
+
+def test_transcript_mapper_error_has_zero_latest_anchor_ms():
+    from application.errors import LectureNotFound
+
+    mapper = TranscriptViewModelMapper()
+
+    view_model = mapper.to_error_view_model(
+        "missing", LectureNotFound(lecture_id="missing")
+    )
+
+    assert view_model.latest_anchor_ms == 0

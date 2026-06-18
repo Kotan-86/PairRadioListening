@@ -21,6 +21,7 @@ class Lecture(Entity):
     utterances: list[Utterance] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        super().__post_init__()
         if self.status not in ("active", "closed"):
             raise ValueError("lecture.status は active または closed のみです")
         if len(self.persona_profiles) != 1:

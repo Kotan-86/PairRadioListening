@@ -85,6 +85,7 @@ def test_refresh_transcript_present_error_clears_previous_lines():
                     body="古い",
                 ),
             ),
+            latest_anchor_ms=0,
             error_message="",
         )
     )

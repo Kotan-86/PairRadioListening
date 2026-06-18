@@ -1,3 +1,33 @@
+[project]
+name = "pair-radio-listening"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.136.3",
+    "google-genai>=1.0.0",
+    "httpx>=0.28.1",
+    "numpy>=2.3.0",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.2",
+    "sounddevice>=0.5.2",
+    "uvicorn[standard]>=0.48.0",
+]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+  "phase0: Phase0 foundation HTTP/smoke",
+  "phase1: Phase1 lecture + transcript flow",
+  "phase1c: Phase1 live audio VB-Cable to AmiVoice",
+  "phase2: Phase2 user reaction + dialogue",
+  "phase3: Phase3 AI orchestration + LLM fake",
+  "phase4: Phase4 reply_target to AI/reaction",
+  "phase5: Phase5 persona at start_lecture",
+  "integration: requires AMIVOICE_API_KEY or GEMINI_API_KEY / real network",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

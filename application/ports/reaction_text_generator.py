@@ -10,6 +10,8 @@ from domain.value_objects.dialogue_policies import (
     LecturerReactionPolicy,
     UserReactionResponsePolicy,
 )
+from domain.value_objects.lecture_llm_context import LectureLlmContext
+from domain.value_objects.reply_target_focus import ReplyTargetFocus
 
 
 class ReactionTextGeneratorPort(Protocol):
@@ -28,5 +30,7 @@ class ReactionTextGeneratorPort(Protocol):
         policy: UserReactionResponsePolicy,
         reaction: Reaction,
         persona: AiPersonaProfile,
+        lecture_llm_context: LectureLlmContext,
+        reply_target_focus: ReplyTargetFocus,
     ) -> Result[str, ReactionTextPortError]:
         """ユーザー reaction に対する AI 返信本文を生成する。"""

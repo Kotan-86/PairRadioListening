@@ -56,3 +56,7 @@ class RefreshDialogueController:
             success=True,
             item_count=len(dialogue_response.items),
         )
+
+    def refresh(self, request: DialogueRefreshRequest) -> DialogueRefreshOutcome:
+        """DialogueViewPort 契約（`interface.md` §8）。"""
+        return self.execute(request)

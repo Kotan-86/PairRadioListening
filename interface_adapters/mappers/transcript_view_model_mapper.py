@@ -20,9 +20,11 @@ class TranscriptViewModelMapper:
             )
             for item in response.items
         )
+        latest_anchor_ms = response.items[-1].time_range.end_ms if response.items else 0
         return TranscriptViewModel(
             lecture_id=response.lecture_id,
             lines=lines,
+            latest_anchor_ms=latest_anchor_ms,
             error_message="",
         )
 
@@ -32,5 +34,6 @@ class TranscriptViewModelMapper:
         return TranscriptViewModel(
             lecture_id=lecture_id,
             lines=(),
+            latest_anchor_ms=0,
             error_message=error_message_for(error),
         )

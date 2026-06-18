@@ -25,6 +25,9 @@ from domain.value_objects.dialogue_speaker import DialogueSpeaker
 from domain.value_objects.lecture_time_anchor import LectureTimeAnchor
 from domain.value_objects.reaction_text import ReactionText
 from domain.value_objects.reply_target import ReplyTarget
+from domain.entities.utterance import Utterance
+from domain.value_objects.recording_speaker import RecordingSpeaker
+from domain.value_objects.speech_text import SpeechText
 from domain.value_objects.time_range import TimeRange
 
 
@@ -71,7 +74,9 @@ class StubReactionTextGenerator:
     def generate_for_lecturer_reaction(self, policy, utterance, persona) -> Result[str, ReactionTextPortError]:
         return Ok("text")
 
-    def generate_for_user_reaction_reply(self, policy, reaction, persona) -> Result[str, ReactionTextPortError]:
+    def generate_for_user_reaction_reply(
+        self, policy, reaction, persona, lecture_llm_context, reply_target_focus
+    ) -> Result[str, ReactionTextPortError]:
         if self.fail:
             return Err(ReactionTextPortError(persona_id=str(persona.id), reason="failed"))
         return Ok(f"reply from {persona.display_name}")
@@ -89,6 +94,8 @@ class StubLlmAnalyzer:
         reaction_text: str,
         persona_prompt: str,
         reply_target_kind: str,
+        lecture_llm_context,
+        reply_target_focus,
     ) -> dict:
         return {"tone": "neutral", "response_intent": "共感", "reference_facts": []}
 
@@ -101,6 +108,14 @@ def _lecture() -> Lecture:
             AiPersonaProfile(id="p1", display_name="AI1", persona_prompt="prompt1"),
         ],
         started_at=0,
+        utterances=[
+            Utterance(
+                id="u1",
+                time_range=TimeRange(start_ms=0, end_ms=1000),
+                speech_text=SpeechText(text="講義"),
+                speaker=RecordingSpeaker(role="lecturer", display_name="講師"),
+            ),
+        ],
     )
 
 
