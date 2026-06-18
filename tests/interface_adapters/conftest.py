@@ -48,11 +48,7 @@ class StubUseCase(Generic[TRequest, TResponse, TError]):
 
 @dataclass
 class SpyOrchestrator:
-    utterance_recorded: list[Any] = field(default_factory=list)
     user_reaction_posted: list[Any] = field(default_factory=list)
-
-    def on_utterance_recorded(self, response: Any) -> None:
-        self.utterance_recorded.append(response)
 
     def on_user_reaction_posted(self, response: Any) -> None:
         self.user_reaction_posted.append(response)

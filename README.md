@@ -53,15 +53,97 @@
 * 仕様: [docs/spec/interface.md](docs/spec/interface.md)
 
 ### フレームワーク&ドライバー層
-* 未実装
+* `framework/`: FastAPI（HTTP API・Composition root・AmiVoice WebSocket Bridge 等）
+* `infrastructure/`: リポジトリ・LLM 等の Outbound ドライバ（MVP は in-memory + LLM アダプタ）
+* `frontend/`: Vue 3 + TypeScript + Vite（SPA。Python パッケージ外）
+* 仕様: [docs/spec/framework.md](docs/spec/framework.md)、[AmiVoice](docs/spec/framework_amivoice.md)、[LLM（Gemini）](docs/spec/framework_llm.md)
+* **AI 壁打ち:** ユーザー投稿時のみ。LLM には投稿時点の **1 分前までの書き起こし（最大 15 区間）** と返信先を渡す（`framework_llm.md` §3）
+* **MVP 運用:** ローカル 1 人・**localhost のみ**（API をインターネット公開しない）。音声は VB-Cable 経由で YouTube / Zoom 等からキャプチャ
 
 ## 4. 技術スタック
 
 ### バックエンド
 * Python 3.13.1
+* FastAPI
+
+#### ローカル起動（バックエンド API）
+
+1. 依存のインストール（プロジェクトルート）:
+
+```bash
+uv sync
+```
+
+2. 秘密情報の設定（**localhost のみ**で利用。`.env` はコミットしない）:
+
+```bash
+cp .env.example .env
+# .env を編集: Phase1c AMIVOICE_API_KEY、Phase3 以降 GEMINI_API_KEY 等
+```
+
+**Phase1c — ライブ文字起こし（VB-Cable → AmiVoice）**
+
+| 項目 | 内容 |
+|------|------|
+| 必須 | `.env` に `AMIVOICE_API_KEY`（[AmiVoice マイページ](https://docs.amivoice.com/) の API キー） |
+| 任意 | `AMIVOICE_PROXY_SERVER_NAME`（社内プロキシ必須時。Wrp 形式 `user:password@proxyhost:port`） |
+| 任意 | `AUDIO_CAPTURE_DEVICE`（省略時 **VB-Cable** / **CABLE Output** 等を自動探索） |
+| 任意 | `AMIVOICE_GRAMMAR_FILE_NAMES`（接続エンジン。省略時 `-a2-ja-general`） |
+| 任意 | `AMIVOICE_WS_URL`（省略時 `wss://acp-api.amivoice.com/v1/`。末尾 `/` 必須） |
+| 任意 | `AMIVOICE_RECEIVE_TIMEOUT_MS`（受信タイムアウト ms。`0` で無効、既定 `0`） |
+| 任意 | `AMIVOICE_SPEAKER_DISPLAY_NAME`（文字起こし行の話者表示名。既定: 講師） |
+
+AmiVoice 接続は公式 **Wrp** クライアントを `third_party/amivoice_wrp` に vendor して利用します（`websocket-client` 自前実装は廃止）。
+
+**OS 音声設定（macOS 例）**
+
+1. [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) をインストールする
+2. システム設定 → サウンド → 出力を **VB-Audio Virtual Cable (Input)** にする（YouTube / Zoom 等の再生音がケーブルへ入る）
+3. PairRadioListening は **VB-Cable**（macOS）または **CABLE Output**（Windows）などのキャプチャ端子から PCM を読み取る
+
+`AMIVOICE_API_KEY` が **未設定** のときはライブ WS・キャプチャは起動せず、開発用の `POST /internal/amivoice/utterances` のみ利用可能です。
+
+**手動受入（Phase1c）**
+
+1. 上記のとおり VB-Cable と `.env` を設定する（社内プロキシ必須なら `AMIVOICE_PROXY_SERVER_NAME` も設定）
+2. バックエンド・フロントエンドを起動する
+3. 別ウィンドウで YouTube 講義動画などを再生する（出力先は VB-Cable Input）
+4. フロントで **講義開始** → 数秒〜数十秒以内に左パネル（文字起こし）に発話が追加されること
+5. サーバログに Wrp の connect / feedDataResume 成功、`resultFinalized` 受信が出ること
+6. **講義終了** で AmiVoice セッションが閉じること
+
+3. API サーバー起動:
+
+```bash
+uv run uvicorn framework.bootstrap:app --host 127.0.0.1 --port 8000
+```
+
+**AmiVoice の切り分けログ:** `.env` に `AMIVOICE_DEBUG=1` を入れると `framework.amivoice` 配下が DEBUG 出力されます（接続・PCM 送信・`resultFinalized`・`record_utterance`）。API キー本体はログに出しません。
+
+`GET http://127.0.0.1:8000/health` が `{"status":"ok"}` を返せば Phase0 基盤は起動できている。
 
 ### フロントエンド
-* 未決定
+* Vue 3 + TypeScript + Vite
+
+#### ローカル起動
+
+```
+source .venv/bin/activate
+cd frontend
+pnpm install
+pnpm dev
+```
+
+ブラウザで `http://localhost:5173` を開く。デフォルトで FastAPI（`http://127.0.0.1:8000`）へ接続し、講義開始後に文字起こし・対話パネルをポーリング更新する。開発時にモック表示のみ試す場合は画面上の「バックエンド API 接続」をオフにする。
+
+#### テスト（Phase1c）
+
+```bash
+uv run pytest -m "phase1c and not integration" -v   # CI 相当（Wrp 単体・Fake キャプチャ）
+uv run pytest -m phase1c -v                         # integration 含む（実キー・VB-Cable は任意）
+```
+
+**社内プロキシ環境:** AmiVoice 接続は Wrp の `setProxyServerName` に `.env` の `AMIVOICE_PROXY_SERVER_NAME`（`user:password@proxyhost:port`）を渡します。`HTTP_PROXY` からの自動合成は行いません。
 
 ### インフラ
 * 未決定

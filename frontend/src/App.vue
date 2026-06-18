@@ -10,6 +10,8 @@ const {
   lecture_id,
   sessionStatus,
   fixturePreset,
+  useLiveApi,
+  apiError,
   startLectureForm,
   reactionText,
   speakerDisplayName,
@@ -20,6 +22,7 @@ const {
   startLecture,
   endLecture,
   setFixturePreset,
+  toggleLiveApi,
   submitReaction,
 } = useAppShellState()
 
@@ -34,6 +37,14 @@ function onFixtureChange(event: Event) {
       <h1 class="app-title">Pair Radio Listening</h1>
       <div class="dev-controls">
         <label>
+          <input
+            type="checkbox"
+            :checked="useLiveApi"
+            @change="toggleLiveApi(($event.target as HTMLInputElement).checked)"
+          />
+          バックエンド API 接続
+        </label>
+        <label v-if="!useLiveApi">
           フィクスチャ:
           <select :value="fixturePreset" @change="onFixtureChange">
             <option value="idle">idle（空）</option>
@@ -42,6 +53,7 @@ function onFixtureChange(event: Event) {
             <option value="dialogue_error">dialogue エラー</option>
           </select>
         </label>
+        <p v-if="apiError" class="api-error">{{ apiError }}</p>
       </div>
     </header>
 

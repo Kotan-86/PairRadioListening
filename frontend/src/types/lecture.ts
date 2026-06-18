@@ -3,6 +3,7 @@
 import type { LectureSessionStatus } from './view_models'
 
 export interface AiPersonaProfileForm {
+  id: string
   display_name: string
   persona_prompt: string
 }

@@ -240,12 +240,22 @@ PairRadioListening のドメイン境界・用語・不変条件を定義する�
 
 #### user_reaction_responder
 
-対象ユーザー `reaction` と、その `reply_target` の種別（`utterance` / `reaction`）に基づき、AI ペルソナ（MVP では 1 件）の **返信方針** を決定する。ユーザー投稿の解析は行わない。
+対象ユーザー `reaction` と講義の書き起こし片・返信先に基づき、AI ペルソナ（MVP では 1 件）の **返信方針** を決定する。ユーザー投稿の解析は行わない。
 
-**入力:** 対象 `reaction`（ユーザー投稿）、`ai_persona_profile`  
+**入力:**
+
+| 入力 | 説明 |
+|------|------|
+| 対象 `reaction`（ユーザー投稿） | 壁打ちの主題 |
+| `ai_persona_profile` | 講義に紐づく 1 件 |
+| `lecture_llm_context` | `application.md` `generate_ai_replies_for_user_reaction` で組み立て。`lecture_time_anchor` の **1 分前〜 anchor** の `utterance`（最大 15 区間）。詳細は `framework_llm.md` §3.1 |
+| `reply_target_focus` | ユーザーが向けた返信先の明示（`utterance` 本文+時刻、または AI `reaction` 抜粋）。`framework_llm.md` §3.2 |
+
 **出力:** 返信方針（テキスト生成そのものは含まない）
 
-**Why（解析の省略）:** MVP では質問／感想の分類や `user_reaction_analyzer` を用いず、`reply_target` の種別に応じた方針決定のみで足りるため。
+**Why（解析の省略）:** MVP では質問／感想の分類や `user_reaction_analyzer` を用いず、講義コンテキストと `reply_target` に基づく方針決定で足りるため。
+
+**Why（1 分・15 区間）:** ユーザーは「そこまで聞いた講義」に反応する。全文は渡さず、トークンとクォータ内に収める（`framework_llm.md` §3.1）。
 
 ---
 

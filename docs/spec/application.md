@@ -4,7 +4,8 @@
 - ユースケース（1操作単位）を定義する
   - 考え方: ユーザーが操作する際に、ドメインエンティティをどのように作る・足す・読む・組み合わせるかを1操作で考える
 - ビジネスルールは、`domain.md` に従う
-- 文字起こし・ユーザー投稿・AI 投稿は並行して発生する。各 Command UC は単独で完結し、generate_ai_* は対応する Command 成功後に 別 UC として非同期起動 する
+- 文字起こし・ユーザー投稿・AI 投稿は並行して発生する。各 Command UC は単独で完結する
+- **MVP:** `generate_ai_*` は **`post_user_reaction` 成功後** のみ、別 UC として非同期起動する（`framework_llm.md` §2）。`record_utterance` 成功では AI を起動しない
 - 表示用の読み取りは **2 つの Query** に分ける: `get_transcript`（`utterance` のみ）と `get_dialogue`（`reaction` のみ。`dialogue_sequence` 昇順）。詳細は `domain.md` §1.1
 - 各ユースケースの execute は Result[Response, Error] を返す。仕様の「失敗時」は Error の種別として定義する。HTTP 等への変換はアダプター層の責務とする（詳細は §4.0）
 
@@ -15,7 +16,7 @@
 | `start_lecture` | Command | 講義記録 | 文字起こし開始 |
 | `record_utterance` | Command | 講義記録 | 音声認識結果（1発話）が届いたとき |
 | `post_user_reaction` | Command | タイムライン対話 | ユーザーがタイムラインに投稿したとき |
-| `generate_ai_reactions_for_utterance` | Command | タイムライン対話 | 新しい `utterance` 記録後 |
+| `generate_ai_reactions_for_utterance` | Command | タイムライン対話 | （**MVP スコープ外**）将来: 新しい `utterance` 記録後 |
 | `generate_ai_replies_for_user_reaction` | Command | タイムライン対話 | ユーザー `reaction` 投稿後 |
 | `get_transcript` | Query | 講義記録 | 文字起こし表示・更新 |
 | `get_dialogue` | Query | タイムライン対話 | 対話（ユーザー・AI）表示・更新 |
@@ -186,10 +187,10 @@
 
 ### generate_ai_reactions_for_utterance
 
-<!-- 仕様: docs/spec/domain.md#lecturer_reaction_generator -->
+<!-- 仕様: docs/spec/domain.md#lecturer_reaction_generator, docs/spec/framework_llm.md#2.2 -->
 
 * 意図: 新規 `utterance` に対し、AI ペルソナ（MVP では 1 件）の `reaction` を 1 件生成して永続化する
-* トリガー: `record_utterance` 成功後（インターフェイスアダプター等が **非同期** に起動）
+* トリガー: **MVP では起動しない**（将来: `record_utterance` 成功後に非同期起動）
   * 入口: `GenerateAiReactionsForUtteranceUseCase.execute(request: GenerateAiReactionsForUtteranceRequest)`
   * 入力: `GenerateAiReactionsForUtteranceRequest`（下表）
 * 戻り値: `GenerateAiReactionsForUtteranceResponse`（下表）
@@ -255,6 +256,7 @@
 - `post_user_reaction` の同一 `execute` 内に含めない（§1 概要）。
 - 本 UC の失敗は `post_user_reaction` をロールバックしない。
 - `user_reaction_responder` で `reply_target` の種別に応じた返信方針を決定し、本文は `ReactionTextGeneratorPort` 経由。`user_reaction_analyzer` は MVP では使用しない。
+- 講義の書き起こし片は **`lecture_llm_context`**（下表）として組み立て、方針決定・本文生成の **両方**に渡す（`framework_llm.md` §3）。
 
 #### GenerateAiRepliesForUserReactionRequest
 
@@ -271,17 +273,53 @@
 | `user_reaction_id` | `reaction.id` | ○ | 契機となったユーザー `reaction` ID |
 | `reaction_id` | `reaction.id` | ○ | 生成・永続化された AI 返信 `reaction` の ID |
 
+#### `lecture_llm_context`（講義 LLM コンテキスト）
+
+`framework_llm.md` §3.1 に従い、当該 UC 内で組み立てる（永続化しない）。
+
+| フィールド | 型（概念） | 必須 | 説明 |
+|------------|-----------|------|------|
+| `anchor_ms` | 整数 | ○ | 対象ユーザー `reaction` の `lecture_time_anchor`（`t0`） |
+| `utterance_excerpts` | 配列 | ○ | 窓内 `utterance`（最大 15 件）。空配列可 |
+
+**`utterance_excerpt` 要素:**
+
+| フィールド | 型（概念） | 必須 | 説明 |
+|------------|-----------|------|------|
+| `utterance_id` | `utterance.id` | ○ | 発話 ID |
+| `start_ms` | 整数 | ○ | 区間開始 |
+| `end_ms` | 整数 | ○ | 区間終了 |
+| `speech_text` | `speech_text` | ○ | 書き起こし |
+
+**選定規則:**
+
+1. `t0` = 対象ユーザー `reaction` の `lecture_time_anchor`
+2. 候補 = 当該 `lecture` の `utterance` のうち、`time_range` が **`[t0 - 60_000, t0]`** と重なるもの
+3. 候補が **16 件以上** のとき、`time_range.end_ms` の降順で先頭 15 件を残す
+4. `utterance_excerpts` は `start_ms` **昇順**
+
+#### `reply_target_focus`（返信先の明示）
+
+`framework_llm.md` §3.2。`reply_target` を解決した結果（永続化しない）。
+
+| `reply_target` 種別 | 内容 |
+|---------------------|------|
+| `utterance` | 参照 `utterance` の `speech_text` + `start_ms` / `end_ms` |
+| `reaction` | 参照 AI `reaction` の `reaction_text` + `speaker.display_name` |
+
 #### 手順
 
 1. `GenerateAiRepliesForUserReactionRequest` を形式検証する
 2. `lecture` と対象ユーザー `reaction` を取得する（いずれか不存在、またはユーザー投稿でなければ失敗）
 3. 講義が終了済みでないことを確認する
-4. `user_reaction_responder` で返信方針を決定する（`reply_target` の種別に応じる）
-5. `ReactionTextGeneratorPort` で方針に基づき本文を生成する
-6. `lecture` から `dialogue_sequence` を採番する
-7. AI `reaction` を 1 件生成する（`reply_target` は当該ユーザー `reaction`、`speaker.role` は `ai`）
-8. `reaction` を永続化し、`lecture` の `next_dialogue_sequence` を更新する
-9. `GenerateAiRepliesForUserReactionResponse` を返す
+4. `lecture_llm_context` を組み立てる（§上表）
+5. `reply_target` を解決し `reply_target_focus` を組み立てる（§上表。`utterance` 不存在・`reaction` 不存在なら失敗）
+6. `user_reaction_responder` で返信方針を決定する（`lecture_llm_context`・`reply_target_focus` を渡す）
+7. `ReactionTextGeneratorPort` で方針に基づき本文を生成する（同一コンテキストを渡す）
+8. `lecture` から `dialogue_sequence` を採番する
+9. AI `reaction` を 1 件生成する（`reply_target` は当該ユーザー `reaction`、`speaker.role` は `ai`）
+10. `reaction` を永続化し、`lecture` の `next_dialogue_sequence` を更新する
+11. `GenerateAiRepliesForUserReactionResponse` を返す
 
 #### 成功時
 

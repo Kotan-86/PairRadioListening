@@ -1,11 +1,20 @@
 <script setup lang="ts">
-// 仕様: docs/spec/interface.md#7.3
+// 仕様: docs/spec/interface.md#7.1, docs/spec/interface.md#7.3
+import { ref } from 'vue'
 import PanelErrorBanner from './PanelErrorBanner.vue'
+import { useStickyBottomScroll } from '../composables/useStickyBottomScroll'
 import type { TranscriptViewModel } from '../types/view_models'
 
-defineProps<{
+const props = defineProps<{
   model: TranscriptViewModel
 }>()
+
+const listEl = ref<HTMLElement | null>(null)
+
+useStickyBottomScroll({
+  listEl,
+  tailId: () => props.model.lines.at(-1)?.utterance_id,
+})
 </script>
 
 <template>
@@ -14,7 +23,7 @@ defineProps<{
       <h2 class="panel-title">文字起こし</h2>
     </header>
     <PanelErrorBanner :error_message="model.error_message" />
-    <ul v-if="model.lines.length" class="line-list">
+    <ul v-if="model.lines.length" ref="listEl" class="line-list">
       <li
         v-for="line in model.lines"
         :key="line.utterance_id"

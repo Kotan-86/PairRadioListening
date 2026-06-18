@@ -17,6 +17,17 @@ def _persona() -> AiPersonaProfile:
     )
 
 
+def test_lecture_assigns_id_when_omitted():
+    # 仕様: docs/spec/domain.md#lecture（集約ルート）
+    lecture = Lecture(
+        title="テスト講義",
+        persona_profiles=[_persona()],
+    )
+
+    assert lecture.id is not None
+    assert str(lecture.id) not in ("", "None")
+
+
 def test_lecture_initial_state_matches_start_lecture():
     # 仕様: docs/spec/application.md#start_lecture
     lecture = Lecture(

@@ -54,8 +54,10 @@ def test_start_lecture_succeeds_and_persists_lecture():
 
     assert result.is_ok()
     assert isinstance(result.value.lecture_id, str)
+    assert result.value.lecture_id not in ("", "None")
     assert len(repository.saved) == 1
     lecture = repository.saved[0]
+    assert lecture.id is not None
     assert lecture.title == "テスト講義"
     assert lecture.status == "active"
     assert lecture.started_at is None

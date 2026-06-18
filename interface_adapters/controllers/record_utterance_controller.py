@@ -1,8 +1,6 @@
 # 仕様: docs/spec/interface.md#record_utterance_controller
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
-
 from application.dtos.record_utterance_request import RecordUtteranceRequest
 from application.dtos.record_utterance_response import RecordUtteranceResponse
 from application.errors import InvalidRequest
@@ -20,16 +18,11 @@ from interface_adapters.presentation.error_kind import error_kind_for
 _USE_CASE = "record_utterance"
 
 
-class AiReactionOrchestratorPort(Protocol):
-    def on_utterance_recorded(self, response: RecordUtteranceResponse) -> None: ...
-
-
 @dataclass(frozen=True, slots=True)
 class RecordUtteranceController:
     _use_case: Callable[
         [RecordUtteranceRequest], Result[RecordUtteranceResponse, RecordUtteranceError]
     ]
-    _orchestrator: AiReactionOrchestratorPort
 
     def execute(self, event: SpeechRecognitionUtteranceEvent) -> RecordUtteranceOutcome:
         validation = self._validate_event(event)
@@ -54,7 +47,6 @@ class RecordUtteranceController:
             )
 
         response = result.value
-        self._orchestrator.on_utterance_recorded(response)
         return RecordUtteranceOutcome(
             success=True,
             utterance_id=response.utterance_id,

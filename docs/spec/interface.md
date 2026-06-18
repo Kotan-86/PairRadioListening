@@ -56,7 +56,7 @@ Command の Response に本文テキストは含めない。表示更新は上�
 | `refresh_transcript_controller` | Query（refresh） | `get_transcript` | `transcript_view_port.refresh` | 文字起こし表示・更新 |
 | `refresh_dialogue_controller` | Query（refresh） | `get_dialogue` | `dialogue_view_port.refresh` | 対話表示・更新 |
 
-**備考:** `generate_ai_reactions_for_utterance` / `generate_ai_replies_for_user_reaction` に対応する Controller は **持たない**（`ai_reaction_orchestrator` が担う。§2.5）。
+**備考:** `generate_ai_*` に対応する Controller は **持たない**（MVP では `generate_ai_replies_for_user_reaction` のみ `ai_reaction_orchestrator` が担う。§2.5）。
 
 ### 2.2 Presenter 一覧
 
@@ -89,8 +89,7 @@ Command の Response に本文テキストは含めない。表示更新は上�
 
 | 名前 | 起動契機 | 非同期 UC | 詳細 |
 |------|----------|-----------|------|
-| `ai_reaction_orchestrator` | `record_utterance` 成功後 | `generate_ai_reactions_for_utterance` | §8 |
-| `ai_reaction_orchestrator` | `post_user_reaction` 成功後 | `generate_ai_replies_for_user_reaction` | §8 |
+| `ai_reaction_orchestrator` | `post_user_reaction` 成功後 | `generate_ai_replies_for_user_reaction` | §8・`framework_llm.md` §2 |
 
 **Why（Orchestrator を Controller から分離）:** Controller の単一責任（入力変換）を保ちつつ、`application.md` §1 の非同期 UC 起動を担うため。
 
@@ -140,7 +139,7 @@ Controller は `error` の詳細属性を Outcome に含めてもよいが、**�
 
 | コンポーネント | 起動契機 | 呼ぶ UC |
 |----------------|----------|---------|
-| `record_utterance_controller` | 音声認識 1 発話 | `record_utterance` →（成功）`ai_reaction_orchestrator.on_utterance_recorded` |
+| `record_utterance_controller` | 音声認識 1 発話 | `record_utterance` のみ（MVP では Orchestrator を呼ばない） |
 | `post_user_reaction_controller` | ユーザー投稿 | `post_user_reaction` →（成功）`ai_reaction_orchestrator.on_user_reaction_posted` |
 | `start_lecture_controller` / `end_lecture_controller` | セッション開始・終了 | 各 1 UC のみ。Orchestrator は呼ばない |
 | `refresh_*_controller` | 表示 refresh | 対応 Query UC + Presenter |
@@ -277,7 +276,6 @@ UI → lecture_session_port.start → start_lecture_controller → start_lecture
 | `transcription_port` | Interface（Protocol） | 音声認識結果受け口 |
 | `record_utterance_controller` | Interface | イベント変換と UC 呼び出し |
 | `record_utterance_use_case` | Application | `utterance` 記録 |
-| `ai_reaction_orchestrator` | Interface | 成功後に `generate_ai_reactions_for_utterance` を非同期起動 |
 
 #### 外部入力：`speech_recognition_utterance_event`
 
@@ -304,20 +302,18 @@ UI → lecture_session_port.start → start_lecture_controller → start_lecture
 2. `RecordUtteranceRequest` への変換
 3. `record_utterance_use_case.execute(request)` の呼び出し
 4. `record_utterance_outcome` の組み立て
-5. 成功時、`ai_reaction_orchestrator.on_utterance_recorded(response)` への委譲
 
 #### 責務外
 
 - ドメインエンティティの生成・永続化の直接実行
 - 文字起こし・対話の表示（各 `*_view_port.refresh`）
-- `generate_ai_reactions_for_utterance` の成否を Outcome に含める
+- LLM / `generate_ai_*` の起動（MVP では `framework_llm.md` §2）
 
 #### 依存性注入
 
 | 依存 | 用途 |
 |------|------|
 | `_use_case` | `record_utterance` |
-| `_orchestrator` | AI リアクション非同期起動 |
 
 #### 変換：`speech_recognition_utterance_event` → `RecordUtteranceRequest`
 
@@ -350,10 +346,9 @@ UI → lecture_session_port.start → start_lecture_controller → start_lecture
 ```
 音声認識エンジン → transcription_port.on_utterance
   → record_utterance_controller → record_utterance_use_case
-  →（成功）ai_reaction_orchestrator → generate_ai_reactions_for_utterance（非同期）
 ```
 
-`generate_ai_*` 成功後、UI は `dialogue_view_port.refresh` で対話を更新。文字起こしは `transcript_view_port.refresh`。
+文字起こしは `transcript_view_port.refresh`（UI ポーリング等）。対話の AI 行は **ユーザー投稿後** の `generate_ai_replies_for_user_reaction` 経路（§8）。
 
 #### 表示との関係
 
@@ -552,15 +547,16 @@ UI → user_reaction_port.on_submit → post_user_reaction_controller → post_u
 1. 各 Controller は対応 UC の `execute` を **1 リクエストあたり 1 回** 呼ぶ
 2. UseCase を Controller 内で `new` しない（コンストラクタ注入のみ）
 3. Command Controller は Presenter を呼ばない（§3.2）
-4. `record_utterance` / `post_user_reaction` 成功時、Orchestrator がそれぞれ対応する `generate_ai_*` を非同期起動する
-5. `refresh_*_controller` は UC 成功時のみ Presenter を呼ぶ
-6. Application 層が Interface 層の型を import しない
-7. `generate_ai_*` 用の Controller は存在しない
+4. `post_user_reaction` 成功時のみ、Orchestrator が `generate_ai_replies_for_user_reaction` を非同期起動する
+5. `record_utterance` 成功時、Orchestrator は呼ばない
+6. `refresh_*_controller` は UC 成功時のみ Presenter を呼ぶ
+7. Application 層が Interface 層の型を import しない
+8. `generate_ai_*` 用の Controller は存在しない
 
 ### 5.2 `record_utterance_controller`（音声認識経路）
 
 1. 有効なイベントで、注入された UC の `execute` が 1 回呼ばれる
-2. 成功時 Orchestrator が `generate_ai_reactions_for_utterance` を非同期起動する
+2. 成功時、Orchestrator を呼ばない
 
 ## 6. Presenter 詳細
 
@@ -733,7 +729,7 @@ View は **ViewModel のみ** を bind する。フォーマット・`reply_targ
 - refresh 成功・失敗のどちらも View が bind する状態を ViewModel で統一する（§7.2）
 - Interface 固有の見せ方を Application / Domain から分離したまま保つ
 
-**View の責務（MVP）:** 各フィールドを所定の UI スロットに bind する。空文字列のラベルスロットは非表示としてよい。並べ替え・`error_kind` の解釈・日時計算は行わない。
+**View の責務（MVP）:** 各フィールドを所定の UI スロットに bind する。空文字列のラベルスロットは非表示としてよい。並べ替え・`error_kind` の解釈・日時計算は行わない。文字起こしパネルで新規 `utterance` 行が追加されたとき、ユーザーがリスト末尾付近にいれば最新行が見える位置へ追従する。過去を読むために上方向へスクロールしている間は位置を動かさない。
 
 ### 7.2 パネル共通：`error_message` と refresh 失敗
 
@@ -819,7 +815,7 @@ View は **ViewModel のみ** を bind する。フォーマット・`reply_targ
 
 ## 8. Orchestrator 詳細
 
-<!-- 関連: docs/spec/application.md §1, #generate_ai_reactions_for_utterance, #generate_ai_replies_for_user_reaction -->
+<!-- 関連: docs/spec/application.md §1, #generate_ai_replies_for_user_reaction, docs/spec/framework_llm.md §2 -->
 
 Orchestrator は **複数 Application UC の起動順序と非同期委譲** を担う Interface 層コンポーネントである。ビジネスルール・永続化・本文生成は Application / Domain に委ね、Orchestrator は `Request` 組み立てと UC 呼び出しの編成のみ行う。
 
@@ -833,7 +829,7 @@ MVP では `ai_reaction_orchestrator` の 1 種のみを定義する。
 | Controller との分離 | 外部入力の変換は Controller。`generate_ai_*` の起動は Orchestrator（§3.1, §3.5） |
 | 単一責任 | 契機となった Command の `Response` から後続 UC を起動する。入力 DTO 変換・表示整形は行わない |
 | 非同期 | `generate_ai_*` は **呼び出し元 Controller の Outcome 返却をブロックしない**（`application.md` §1） |
-| 失敗の局所化 | `generate_ai_*` の失敗は、契機となった `record_utterance` / `post_user_reaction` を **ロールバックしない**（`application.md` 各 UC 備考） |
+| 失敗の局所化 | `generate_ai_*` の失敗は、契機となった `post_user_reaction` を **ロールバックしない**（`application.md` 各 UC 備考） |
 | 表示経路 | AI 本文は `GenerateAi*Response` に載せず、成功後は **`dialogue_view_port.refresh`** で `get_dialogue` → Presenter（§1.2, §7） |
 
 **Why（専用 Controller を置かない）:** `generate_ai_*` は外部（UI・音声認識）から直接触られない後続処理であり、入口は常に他 Command の成功後であるため。
@@ -848,16 +844,15 @@ MVP では `ai_reaction_orchestrator` の 1 種のみを定義する。
 
 ### 8.2 `ai_reaction_orchestrator`
 
-<!-- 仕様: docs/spec/application.md#generate_ai_reactions_for_utterance / #generate_ai_replies_for_user_reaction -->
+<!-- 仕様: docs/spec/application.md#generate_ai_replies_for_user_reaction, docs/spec/framework_llm.md §2 -->
 
-* 意図: Command 成功後に、対応する `generate_ai_*` UC を非同期起動し、完了後に対話パネルを refresh する
-* 呼び出し元: `record_utterance_controller` / `post_user_reaction_controller`（成功時のみ）
+* 意図: ユーザー投稿成功後に `generate_ai_replies_for_user_reaction` を非同期起動し、完了後に対話パネルを refresh する
+* 呼び出し元: `post_user_reaction_controller`（成功時のみ）
 
-#### 公開操作
+#### 公開操作（MVP）
 
 | 操作 | 入力 | 起動 UC |
 |------|------|---------|
-| `on_utterance_recorded` | `RecordUtteranceResponse` | `generate_ai_reactions_for_utterance` |
 | `on_user_reaction_posted` | `PostUserReactionResponse` | `generate_ai_replies_for_user_reaction` |
 
 いずれも **同期で return しない**（非同期スケジュールのみ）。戻り値は MVP では定義しない（void 相当）。
@@ -875,13 +870,6 @@ MVP では `ai_reaction_orchestrator` の 1 種のみを定義する。
 - `generate_ai_*` 失敗時の `dialogue_presenter.present_error`（AI 失敗はユーザー投稿・発話記録の成功を否定しない。対話パネルのエラー表示は **refresh UC 失敗時のみ** §7.2）
 - 同一契機での `generate_ai_*` の重複起動の抑止（MVP では Controller が 1 回だけ委譲する前提）
 
-#### 変換：`RecordUtteranceResponse` → `GenerateAiReactionsForUtteranceRequest`
-
-| 入力（response） | 出力（request） |
-|-----------------|----------------|
-| `lecture_id` | `lecture_id` |
-| `utterance_id` | `utterance_id` |
-
 #### 変換：`PostUserReactionResponse` → `GenerateAiRepliesForUserReactionRequest`
 
 | 入力（response） | 出力（request） |
@@ -893,22 +881,11 @@ MVP では `ai_reaction_orchestrator` の 1 種のみを定義する。
 
 | 依存 | 用途 |
 |------|------|
-| `_generate_for_utterance_use_case` | `generate_ai_reactions_for_utterance` |
 | `_generate_for_user_reaction_use_case` | `generate_ai_replies_for_user_reaction` |
 | `_dialogue_view_port` | AI 生成成功後の対話 refresh |
 | `_task_scheduler`（概念） | 非同期実行の委譲（実装は Framework 層。Orchestrator は Protocol のみ依存） |
 
 **備考:** `_task_scheduler` は Interface 層の Outbound Port（例: `background_task_port.schedule(fn)`）として定義してよい。具体（スレッド・asyncio・キュー）は Framework が提供する。
-
-#### 処理フロー（utterance 契機）
-
-```
-record_utterance_controller（成功）
-  → ai_reaction_orchestrator.on_utterance_recorded(response)
-  →（非同期）generate_ai_reactions_for_utterance_use_case.execute(request)
-  → Ok: dialogue_view_port.refresh({ lecture_id })
-  → Err: 何もしない（ログ等は Framework 任意）
-```
 
 #### 処理フロー（ユーザー投稿契機）
 
@@ -920,7 +897,7 @@ post_user_reaction_controller（成功）
   → Err: 何もしない
 ```
 
-**並行:** 複数の `on_utterance_recorded` / `on_user_reaction_posted` は連続してスケジュールされうる。完了順は `dialogue_sequence` 採番に反映される（`domain.md` / `application.md`）。
+**並行:** 複数の `on_user_reaction_posted` は連続してスケジュールされうる。完了順は `dialogue_sequence` 採番に反映される（`domain.md` / `application.md`）。
 
 #### 表示との関係
 
@@ -928,18 +905,18 @@ post_user_reaction_controller（成功）
 |------------|------------|
 | Command 成功直後 | Controller は Presenter を呼ばない。UI の楽観表示は任意（§4 `post_user_reaction`） |
 | `generate_ai_*` 成功後 | `dialogue_view_port.refresh` → `get_dialogue` → `dialogue_presenter.present` |
-| `generate_ai_*` 失敗後 | refresh しない（MVP）。ユーザー投稿・発話記録は画面に残る |
+| `generate_ai_*` 失敗後 | refresh しない（MVP）。ユーザー投稿は画面に残る |
 
-文字起こしパネルは、発話記録後 **`transcript_view_port.refresh`** を別経路（UI ポーリング等）で更新する。Orchestrator は呼ばない。
+文字起こしパネルは発話記録後 **`transcript_view_port.refresh`** を別経路（UI ポーリング等）で更新する。Orchestrator は呼ばない。
 
 ### 8.3 受入基準（Orchestrator）
 
 #### `ai_reaction_orchestrator`
 
-1. `on_utterance_recorded` で `generate_ai_reactions_for_utterance` の `execute` が 1 回スケジュールされる
-2. `on_user_reaction_posted` で `generate_ai_replies_for_user_reaction` の `execute` が 1 回スケジュールされる
-3. スケジュールは `record_utterance_controller` / `post_user_reaction_controller` の Outcome 返却をブロックしない
-4. UC `Ok` 時のみ `dialogue_view_port.refresh` が 1 回呼ばれる
-5. UC `Err` 時、契機 Command の Outcome と当該パネルの ViewModel（成功済み内容）を Orchestrator が上書きしない
-6. Orchestrator が Domain エンティティを直接生成しない
-7. Application 層が Orchestrator の型を import しない
+1. `on_user_reaction_posted` で `generate_ai_replies_for_user_reaction` の `execute` が 1 回スケジュールされる
+2. スケジュールは `post_user_reaction_controller` の Outcome 返却をブロックしない
+3. UC `Ok` 時のみ `dialogue_view_port.refresh` が 1 回呼ばれる
+4. UC `Err` 時、契機 Command の Outcome と当該パネルの ViewModel（成功済み内容）を Orchestrator が上書きしない
+5. Orchestrator が Domain エンティティを直接生成しない
+6. Application 層が Orchestrator の型を import しない
+7. `record_utterance_controller` から Orchestrator が呼ばれない
